@@ -1,0 +1,6 @@
+{
+  "name": "Teacher's Portfolio — محفظة الأستاذ",
+  "description": "Seasonal offline-first digital portfolio PWA for middle-school teachers across Arabic, English, and French.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
