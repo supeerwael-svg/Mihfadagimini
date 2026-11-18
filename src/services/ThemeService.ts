@@ -77,7 +77,7 @@ export class ThemeService {
       id: generateId(),
       paletteId: THEME_PALETTES[0].id,
       primaryColor: THEME_PALETTES[0].primary,
-      mode: 'system',
+      mode: 'light',
       fontSizePx: 16,
       cardOverrides: {},
       createdAt: now,

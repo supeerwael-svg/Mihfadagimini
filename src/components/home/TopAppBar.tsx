@@ -1,53 +1,37 @@
 import React from 'react';
-import { Building2, Search } from 'lucide-react';
+import { Lightbulb } from 'lucide-react';
 import { useI18n } from '@/src/i18n/I18nContext';
-import { PWAInstallButton } from '@/src/components/common/PWAInstallButton';
 
 interface TopAppBarProps {
-  onOpenSearch: () => void;
-  onOpenSchoolGateway: () => void;
   isArchiveYear?: boolean;
   yearLabel?: string;
 }
 
 export const TopAppBar: React.FC<TopAppBarProps> = ({
-  onOpenSearch,
-  onOpenSchoolGateway,
   isArchiveYear = false,
   yearLabel,
 }) => {
   const { t } = useI18n();
 
   return (
-    <header className="sticky top-0 z-30 bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-sm pt-safe">
-      <div className="mx-auto max-w-6xl px-4 h-14 flex items-center justify-between gap-3">
+    <header className="sticky top-0 z-30 bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-[0_3px_14px_rgba(15,23,42,0.16)] pt-safe">
+      <div className="mx-auto max-w-6xl px-4 min-h-[84px] sm:min-h-[88px] flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-base font-extrabold leading-tight truncate">{t.appName}</h1>
-          <p className="text-[11px] opacity-85 truncate">
-            {isArchiveYear && yearLabel ? `${t.common.readOnlyArchive} · ${yearLabel}` : t.appTagline}
-          </p>
+          <h1 className="text-[22px] sm:text-2xl font-extrabold leading-tight tracking-tight truncate">
+            {t.appName}
+          </h1>
+          {isArchiveYear && yearLabel && (
+            <p className="text-[11px] font-medium opacity-85 truncate mt-0.5 tabular-nums">
+              {t.common.readOnlyArchive} · {yearLabel}
+            </p>
+          )}
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          <PWAInstallButton compact />
-          <button
-            type="button"
-            onClick={onOpenSchoolGateway}
-            aria-label={t.school.pageTitle}
-            title={t.school.pageTitle}
-            className="min-h-[44px] min-w-[44px] rounded-xl flex items-center justify-center hover:bg-white/15 transition-colors"
-          >
-            <Building2 className="w-5 h-5" />
-          </button>
-          <button
-            type="button"
-            onClick={onOpenSearch}
-            aria-label={t.common.search}
-            title={t.common.search}
-            className="min-h-[44px] min-w-[44px] rounded-xl flex items-center justify-center hover:bg-white/15 transition-colors"
-          >
-            <Search className="w-5 h-5" />
-          </button>
+        <div className="flex items-center gap-1.5 min-w-0 shrink">
+          <Lightbulb className="w-4 h-4 text-amber-300 fill-amber-300/90 shrink-0" />
+          <span className="text-xs font-semibold opacity-95 truncate max-w-[165px] sm:max-w-xs">
+            {t.appTagline}
+          </span>
         </div>
       </div>
     </header>

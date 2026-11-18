@@ -54,6 +54,18 @@ export class ClassesService {
     });
   }
 
+  async updateClassSubjects(classId: string, subjectIds: string[]): Promise<ClassRoomRecord | null> {
+    const existing = await this.adapter.getById('classRooms', classId);
+    if (!existing) return null;
+    const updated: ClassRoomRecord = {
+      ...existing,
+      subjectIds: Array.from(new Set(subjectIds)),
+      updatedAt: new Date().toISOString(),
+    };
+    await this.adapter.put('classRooms', updated);
+    return updated;
+  }
+
   async reorderClasses(orderedIds: string[]): Promise<void> {
     const now = new Date().toISOString();
     const updates: ClassRoomRecord[] = [];

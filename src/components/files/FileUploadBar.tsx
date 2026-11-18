@@ -1,38 +1,72 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link2, UploadCloud } from 'lucide-react';
 import { useI18n } from '@/src/i18n/I18nContext';
 import { services } from '@/src/services';
-import type { ExamKind } from '@/src/types/models';
+import type { PreparedUploadCandidate } from '@/src/services/FilesService';
+import type { ExamKind, SubjectRecord } from '@/src/types/models';
 import type { ServiceContext } from '@/src/types/services';
+import { UploadMetadataModal } from './UploadMetadataModal';
 
 interface FileUploadBarProps {
   ctx: ServiceContext;
   sectionId: string;
+  sectionName?: string;
+  subjects?: SubjectRecord[];
   accept?: string;
   termNumber?: 1 | 2 | 3;
   examKind?: ExamKind;
   allowExternalUrl?: boolean;
   disabled?: boolean;
+  compact?: boolean;
+  triggerUploadRef?: React.MutableRefObject<(() => void) | null>;
+  triggerUrlRef?: React.MutableRefObject<(() => void) | null>;
   onUploaded: () => void;
 }
 
 export const FileUploadBar: React.FC<FileUploadBarProps> = ({
   ctx,
   sectionId,
+  sectionName = '',
+  subjects: propSubjects,
   accept,
   termNumber,
   examKind,
   allowExternalUrl = false,
   disabled = false,
+  compact = false,
+  triggerUploadRef,
+  triggerUrlRef,
   onUploaded,
 }) => {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [currentFile, setCurrentFile] = useState('');
+  const [candidates, setCandidates] = useState<PreparedUploadCandidate[]>([]);
+  const [showMetaModal, setShowMetaModal] = useState(false);
+  const [subjects, setSubjects] = useState<SubjectRecord[]>(propSubjects ?? []);
   const [showUrlForm, setShowUrlForm] = useState(false);
   const [urlName, setUrlName] = useState('');
   const [urlLink, setUrlLink] = useState('');
+
+  useEffect(() => {
+    if (propSubjects) {
+      setSubjects(propSubjects);
+    } else {
+      services.subjects
+        .listForTeacher(ctx.academicYearId, ctx.ownerId, false)
+        .then(setSubjects);
+    }
+  }, [propSubjects, ctx.academicYearId, ctx.ownerId]);
+
+  useEffect(() => {
+    if (triggerUploadRef) {
+      triggerUploadRef.current = () => inputRef.current?.click();
+    }
+    if (triggerUrlRef) {
+      triggerUrlRef.current = () => setShowUrlForm(true);
+    }
+  }, [triggerUploadRef, triggerUrlRef]);
 
   if (disabled) return null;
 
@@ -41,19 +75,21 @@ export const FileUploadBar: React.FC<FileUploadBarProps> = ({
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList);
     setProgress(0);
-    await services.files.uploadFiles(ctx, sectionId, files, {
-      termNumber,
-      examKind,
-      compressImages: true,
-      onProgress: (pct, name) => {
-        setProgress(pct);
-        setCurrentFile(name);
-      },
-    });
-    setProgress(null);
-    setCurrentFile('');
-    if (inputRef.current) inputRef.current.value = '';
-    onUploaded();
+    try {
+      const prepared = await services.files.prepareUploadCandidates(ctx, files, {
+        compressImages: true,
+        onProgress: (pct, name) => {
+          setProgress(pct);
+          setCurrentFile(name);
+        },
+      });
+      setCandidates(prepared);
+      setShowMetaModal(true);
+    } finally {
+      setProgress(null);
+      setCurrentFile('');
+      if (inputRef.current) inputRef.current.value = '';
+    }
   };
 
   const handleAddUrl = async (e: React.FormEvent) => {
@@ -70,7 +106,7 @@ export const FileUploadBar: React.FC<FileUploadBarProps> = ({
   };
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <input
           ref={inputRef}
@@ -80,20 +116,34 @@ export const FileUploadBar: React.FC<FileUploadBarProps> = ({
           onChange={handleFilesSelected}
           className="hidden"
         />
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="flex-1 min-w-[200px] min-h-[48px] rounded-2xl border-2 border-dashed border-[var(--color-primary)]/40 bg-[var(--color-primary-light)]/50 px-4 py-2.5 text-xs font-bold text-[var(--color-primary)] flex items-center justify-center gap-2 hover:bg-[var(--color-primary-light)] transition-colors"
-        >
-          <UploadCloud className="w-4 h-4 shrink-0" />
-          <span className="truncate">{t.files.uploadPrompt}</span>
-        </button>
+
+        {compact ? (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="min-h-[40px] px-3.5 rounded-xl bg-[var(--color-primary)] text-[var(--color-on-primary)] text-xs font-bold inline-flex items-center gap-1.5 shadow-sm"
+          >
+            <UploadCloud className="w-4 h-4 shrink-0" />
+            <span className="truncate max-w-[140px]">{t.files.uploadPrompt}</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="flex-1 min-w-[180px] min-h-[46px] rounded-2xl border-2 border-dashed border-[var(--color-primary)]/40 bg-[var(--color-primary-light)]/50 px-4 py-2 text-xs font-bold text-[var(--color-primary)] flex items-center justify-center gap-2 hover:bg-[var(--color-primary-light)] transition-colors"
+          >
+            <UploadCloud className="w-4 h-4 shrink-0" />
+            <span className="truncate">{t.files.uploadPrompt}</span>
+          </button>
+        )}
 
         {allowExternalUrl && (
           <button
             type="button"
             onClick={() => setShowUrlForm((v) => !v)}
-            className="min-h-[48px] px-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] text-xs font-bold text-[var(--color-text)] inline-flex items-center gap-1.5"
+            className={`${
+              compact ? 'min-h-[40px] px-3 rounded-xl' : 'min-h-[46px] px-4 rounded-2xl'
+            } border border-[var(--color-border)] bg-[var(--color-surface)] text-xs font-bold text-[var(--color-text)] inline-flex items-center gap-1.5`}
           >
             <Link2 className="w-4 h-4 text-[var(--color-primary)]" />
             <span>{t.sections.addExternalUrl}</span>
@@ -154,6 +204,26 @@ export const FileUploadBar: React.FC<FileUploadBarProps> = ({
           </div>
         </form>
       )}
+
+      <UploadMetadataModal
+        open={showMetaModal}
+        ctx={ctx}
+        sectionId={sectionId}
+        sectionName={sectionName}
+        initialCandidates={candidates}
+        subjects={subjects}
+        defaultTermNumber={termNumber}
+        examKind={examKind}
+        onCancel={() => {
+          setShowMetaModal(false);
+          setCandidates([]);
+        }}
+        onConfirm={() => {
+          setShowMetaModal(false);
+          setCandidates([]);
+          onUploaded();
+        }}
+      />
     </div>
   );
 };

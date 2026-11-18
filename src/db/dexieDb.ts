@@ -3,17 +3,31 @@ import type {
   AcademicYearRecord,
   AnnouncementRecord,
   AppMetaRecord,
+  BehaviorConfigRecord,
+  BehaviorCriterionRecord,
+  BehaviorEventRecord,
   ChatMessageRecord,
   ChatRoomRecord,
   ClassRoomRecord,
   FileRecord,
+  FileSearchIndexRecord,
+  FileVersionRecord,
   ForumCommentRecord,
   ForumTopicRecord,
+  GradeHistoryRecord,
+  GradeRecord,
+  GradingConfigRecord,
   InviteCodeRecord,
   JournalEntryRecord,
+  LibraryCollectionRecord,
+  SavedSearchRecord,
   SchoolRecord,
+  SeatingPlanRecord,
   SectionNode,
   SeminarRecord,
+  StudentRecord,
+  SubjectRecord,
+  TagRecord,
   ThemeConfigRecord,
   UserRecord,
 } from '@/src/types/models';
@@ -26,7 +40,21 @@ export class TeachersPortfolioDB extends Dexie {
   academicYears!: Table<AcademicYearRecord, string>;
   sections!: Table<SectionNode, string>;
   files!: Table<FileRecord, string>;
+  tags!: Table<TagRecord, string>;
+  collections!: Table<LibraryCollectionRecord, string>;
+  savedSearches!: Table<SavedSearchRecord, string>;
+  searchIndex!: Table<FileSearchIndexRecord, string>;
+  fileVersions!: Table<FileVersionRecord, string>;
   classRooms!: Table<ClassRoomRecord, string>;
+  subjects!: Table<SubjectRecord, string>;
+  students!: Table<StudentRecord, string>;
+  grades!: Table<GradeRecord, string>;
+  gradeHistory!: Table<GradeHistoryRecord, string>;
+  gradingConfigs!: Table<GradingConfigRecord, string>;
+  seatingPlans!: Table<SeatingPlanRecord, string>;
+  behaviorCriteria!: Table<BehaviorCriterionRecord, string>;
+  behaviorEvents!: Table<BehaviorEventRecord, string>;
+  behaviorConfigs!: Table<BehaviorConfigRecord, string>;
   journalEntries!: Table<JournalEntryRecord, string>;
   seminars!: Table<SeminarRecord, string>;
   forumTopics!: Table<ForumTopicRecord, string>;
@@ -55,6 +83,33 @@ export class TeachersPortfolioDB extends Dexie {
       chatMessages: 'id, academicYearId, roomId, createdAt, deletedAt',
       themeConfigs: 'id, ownerId, deletedAt',
       appMeta: 'key',
+    });
+
+    this.version(2).stores({
+      students: 'id, academicYearId, classRoomId, order, deletedAt',
+      grades: 'id, academicYearId, classRoomId, studentId, termNumber, subjectKey, deletedAt',
+      gradeHistory: 'id, academicYearId, classRoomId, studentId, createdAt, deletedAt',
+      gradingConfigs: 'id, academicYearId, schoolId, deletedAt',
+    });
+
+    this.version(3).stores({
+      subjects: 'id, academicYearId, ownerId, order, isActive, deletedAt',
+    });
+
+    this.version(4).stores({
+      files: 'id, academicYearId, sectionId, hash, status, fileCategory, levelCode, subjectId, isFavorite, pinned, lastOpenedAt, deletedAt',
+      tags: 'id, academicYearId, name, parentName, deletedAt',
+      collections: 'id, academicYearId, order, isSmart, deletedAt',
+      savedSearches: 'id, academicYearId, pinnedToHome, deletedAt',
+      searchIndex: 'id, academicYearId, fileId, deletedAt',
+      fileVersions: 'id, academicYearId, fileId, versionNumber, deletedAt',
+    });
+
+    this.version(5).stores({
+      seatingPlans: 'id, academicYearId, classRoomId, termNumber, subjectId, isActive, deletedAt',
+      behaviorCriteria: 'id, academicYearId, ownerId, order, isActive, deletedAt',
+      behaviorEvents: 'id, academicYearId, classRoomId, studentId, termNumber, subjectKey, criterionId, occurredAt, deletedAt',
+      behaviorConfigs: 'id, academicYearId, ownerId, deletedAt',
     });
   }
 }

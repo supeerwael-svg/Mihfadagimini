@@ -90,6 +90,8 @@ export class AcademicYearService {
 
     // 3. Copy section structure from source year (preserving user customizations)
     const sourceSections = await this.adapter.queryByYear('sections', params.sourceYearId);
+    const sourceById = new Map(sourceSections.map((s) => [s.id, s]));
+    const structuralSections = sourceSections.filter((s) => !s.subjectId && s.kind !== 'subject');
     const idMap = new Map<string, string>();
     const mapId = (oldId: string): string => {
       if (!idMap.has(oldId)) {
@@ -99,11 +101,19 @@ export class AcademicYearService {
       return idMap.get(oldId)!;
     };
 
-    sourceSections.forEach((s) => mapId(s.id));
+    const resolveNearestStructuralId = (oldId: string): string => {
+      let curr: SectionNode | undefined = sourceById.get(oldId);
+      while (curr && (curr.subjectId || curr.kind === 'subject')) {
+        curr = curr.parentId ? sourceById.get(curr.parentId) : undefined;
+      }
+      return curr ? mapId(curr.id) : `${newYearId}__sec_12`;
+    };
+
+    structuralSections.forEach((s) => mapId(s.id));
 
     let copiedSections: SectionNode[];
-    if (sourceSections.length > 0) {
-      copiedSections = sourceSections.map((s) => ({
+    if (structuralSections.length > 0) {
+      copiedSections = structuralSections.map((s) => ({
         ...s,
         id: mapId(s.id),
         parentId: s.parentId ? mapId(s.parentId) : null,
@@ -117,24 +127,44 @@ export class AcademicYearService {
     }
     await this.adapter.bulkPut('sections', copiedSections);
 
-    // 4. Copy classroom definitions (without student Excel files unless selected)
+    // 4. Copy classroom definitions (reset linked subjectIds for the new year)
     const sourceClasses = await this.adapter.queryByYear('classRooms', params.sourceYearId);
-    const copiedClasses: ClassRoomRecord[] = sourceClasses.map((c) => ({
-      ...c,
-      id: generateId(),
-      academicYearId: newYearId,
-      termSectionIds: {
-        1: `${newYearId}__cls_${c.name}_t1`,
-        2: `${newYearId}__cls_${c.name}_t2`,
-        3: `${newYearId}__cls_${c.name}_t3`,
-      },
-      createdAt: now,
-      updatedAt: now,
-      syncStatus: 'local',
-    }));
+    const copiedClasses: ClassRoomRecord[] = sourceClasses.map((c) => {
+      const id = generateId();
+      return {
+        ...c,
+        id,
+        subjectIds: [],
+        academicYearId: newYearId,
+        termSectionIds: {
+          1: `${newYearId}__cls_${id}_t1`,
+          2: `${newYearId}__cls_${id}_t2`,
+          3: `${newYearId}__cls_${id}_t3`,
+        },
+        createdAt: now,
+        updatedAt: now,
+        syncStatus: 'local',
+      };
+    });
     await this.adapter.bulkPut('classRooms', copiedClasses);
 
-    // 5. Optionally copy selected files
+    // 4b. Copy grading formula rules into the new year
+    const sourceConfigs = await this.adapter.queryByYear('gradingConfigs', params.sourceYearId);
+    if (sourceConfigs.length > 0) {
+      await this.adapter.bulkPut(
+        'gradingConfigs',
+        sourceConfigs.map((cfg) => ({
+          ...cfg,
+          id: generateId(),
+          academicYearId: newYearId,
+          createdAt: now,
+          updatedAt: now,
+          syncStatus: 'local',
+        }))
+      );
+    }
+
+    // 5. Optionally copy selected files (re-homing files from deleted subject folders to nearest parent)
     if (params.copyMode === 'structure_with_files' && params.selectedFileIds?.length) {
       const sourceFiles = await this.adapter.queryByYear('files', params.sourceYearId);
       const selectedSet = new Set(params.selectedFileIds);
@@ -144,7 +174,7 @@ export class AcademicYearService {
         copiedFiles.push({
           ...f,
           id: generateId(),
-          sectionId: mapId(f.sectionId),
+          sectionId: resolveNearestStructuralId(f.sectionId),
           academicYearId: newYearId,
           linkedSolutionFileId: null,
           lastOpenedAt: null,

@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Archive,
+  BookOpen,
+  Building2,
+  Calculator,
   CalendarPlus,
   Download,
   Globe,
@@ -8,25 +11,37 @@ import {
   LogOut,
   Palette,
   RotateCcw,
+  Search,
   Shield,
   Upload,
 } from 'lucide-react';
 import { THEME_PALETTES } from '@/src/db/seedDefaults';
 import { useI18n } from '@/src/i18n/I18nContext';
 import { services } from '@/src/services';
+import { DEFAULT_FORMULA_RULE } from '@/src/services/GradesService';
+import type { YearArchiveSummary } from '@/src/services/ArchiveService';
 import type { StorageStats } from '@/src/services/FilesService';
+import type { IndexStatusInfo } from '@/src/services/SearchService';
+import { formatFileSize } from '@/src/utils/fileFormat';
 import type {
   AcademicYearRecord,
   FileRecord,
+  GradeSubjectKey,
+  GradingConfigRecord,
+  GradingFormulaRule,
   LanguageCode,
+  MiddleSchoolLevel,
   SectionNode,
+  SubjectRecord,
   ThemeConfigRecord,
   UserRecord,
 } from '@/src/types/models';
 import type { ServiceContext } from '@/src/types/services';
 import { AVAILABLE_CARD_ICONS, DynamicIcon } from '@/src/components/common/DynamicIcon';
 import { PWAInstallButton } from '@/src/components/common/PWAInstallButton';
+import { SubjectManagerPanel } from '@/src/components/subjects/SubjectManagerPanel';
 import { AdminDashboardModal } from './AdminDashboardModal';
+import { SeatingCriteriaSettings } from './SeatingCriteriaSettings';
 
 interface SettingsViewProps {
   ctx: ServiceContext;
@@ -35,9 +50,13 @@ interface SettingsViewProps {
   years: AcademicYearRecord[];
   activeViewingYear: AcademicYearRecord;
   mainSections: SectionNode[];
+  customizableCards?: SectionNode[];
+  subjects?: SubjectRecord[];
   onThemeUpdated: (cfg: ThemeConfigRecord) => void;
   onYearChanged: () => Promise<void>;
+  onSubjectsChanged?: () => Promise<void>;
   onFullReload: () => Promise<void>;
+  onOpenSchoolGateway?: () => void;
   onLogout: () => Promise<void>;
 }
 
@@ -48,15 +67,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   years,
   activeViewingYear,
   mainSections,
+  customizableCards,
+  subjects: propSubjects,
   onThemeUpdated,
   onYearChanged,
+  onSubjectsChanged,
   onFullReload,
+  onOpenSchoolGateway,
   onLogout,
 }) => {
   const { t, lang, setLanguage, pickLocalized } = useI18n();
   const [storage, setStorage] = useState<StorageStats | null>(null);
   const [lastBackup, setLastBackup] = useState<string | null>(null);
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [indexStatus, setIndexStatus] = useState<IndexStatusInfo | null>(null);
+  const [rebuildingIndex, setRebuildingIndex] = useState(false);
+  const [rebuildProgress, setRebuildProgress] = useState<{ done: number; total: number } | null>(null);
+  const [yearArchiveSummary, setYearArchiveSummary] = useState<YearArchiveSummary | null>(null);
 
   // New Academic Year Gateway state
   const [newYearLabel, setNewYearLabel] = useState('2027/2028');
@@ -68,13 +95,76 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Per-card customization
   const [customSectionSlug, setCustomSectionSlug] = useState('');
 
+  // Grading formula configuration state
+  const [gradingConfig, setGradingConfig] = useState<GradingConfigRecord | null>(null);
+  const [ruleLevelScope, setRuleLevelScope] = useState<'default' | MiddleSchoolLevel>('default');
+  const [ruleSubjectScope, setRuleSubjectScope] = useState<'all' | GradeSubjectKey>('all');
+  const [localSubjects, setLocalSubjects] = useState<SubjectRecord[]>(propSubjects ?? []);
+
+  const activeSubjects = propSubjects ?? localSubjects;
+
   const importInputRef = useRef<HTMLInputElement | null>(null);
+
+  const loadSubjects = async () => {
+    const list = await services.subjects.listForTeacher(ctx.academicYearId, ctx.ownerId, false);
+    setLocalSubjects(list);
+  };
 
   useEffect(() => {
     services.files.getStorageStats().then(setStorage);
     services.backup.getLastBackupDate().then(setLastBackup);
     services.files.listAllForYear(activeViewingYear.id).then(setYearFiles);
-  }, [activeViewingYear.id]);
+    services.grades.getGradingConfig(ctx).then(setGradingConfig);
+    services.search.getIndexStatus(activeViewingYear.id).then(setIndexStatus);
+    services.archive.getYearArchiveSummary(activeViewingYear.id).then(setYearArchiveSummary);
+    loadSubjects();
+  }, [activeViewingYear.id, ctx.academicYearId, ctx.ownerId]);
+
+  useEffect(() => {
+    if (propSubjects) {
+      setLocalSubjects(propSubjects);
+    }
+  }, [propSubjects]);
+
+  const activeRuleKey = (() => {
+    if (ruleLevelScope !== 'default' && ruleSubjectScope !== 'all') {
+      return `${ruleLevelScope}__${ruleSubjectScope}`;
+    }
+    if (ruleLevelScope !== 'default') return ruleLevelScope;
+    if (ruleSubjectScope !== 'all') return ruleSubjectScope;
+    return 'default';
+  })();
+
+  const activeRule: GradingFormulaRule = (() => {
+    if (!gradingConfig) return DEFAULT_FORMULA_RULE;
+    if (gradingConfig.rules[activeRuleKey]) return gradingConfig.rules[activeRuleKey];
+    if (ruleLevelScope !== 'default' && ruleSubjectScope !== 'all') {
+      return (
+        gradingConfig.rules[ruleSubjectScope] ||
+        gradingConfig.rules[ruleLevelScope] ||
+        gradingConfig.rules.default ||
+        DEFAULT_FORMULA_RULE
+      );
+    }
+    return gradingConfig.rules.default || DEFAULT_FORMULA_RULE;
+  })();
+
+  const handleUpdateFormulaRule = async (patch: Partial<GradingFormulaRule>) => {
+    if (!gradingConfig) return;
+    const nextRule: GradingFormulaRule = {
+      ...activeRule,
+      ...patch,
+      key: activeRuleKey,
+    };
+    const saved = await services.grades.saveGradingConfig({
+      ...gradingConfig,
+      rules: {
+        ...gradingConfig.rules,
+        [activeRuleKey]: nextRule,
+      },
+    });
+    setGradingConfig(saved);
+  };
 
   const handleSaveTheme = async (patch: Partial<ThemeConfigRecord>) => {
     const saved = await services.theme.saveConfig({ ...themeConfig, ...patch });
@@ -139,6 +229,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* Install PWA */}
       <PWAInstallButton />
 
+      {onOpenSchoolGateway && (
+        <button
+          type="button"
+          onClick={onOpenSchoolGateway}
+          className="w-full min-h-[48px] rounded-3xl bg-[var(--color-surface)] border border-[var(--color-border)] px-5 font-bold text-sm text-[var(--color-text)] flex items-center justify-between"
+        >
+          <span className="inline-flex items-center gap-2.5">
+            <Building2 className="w-5 h-5 text-[var(--color-primary)]" />
+            <span>{t.school.pageTitle}</span>
+          </span>
+          <span className="text-xs text-[var(--color-primary)] font-bold">{t.common.open}</span>
+        </button>
+      )}
+
       {/* Admin Dashboard Trigger */}
       {user.role === 'primary_admin' && (
         <button
@@ -180,6 +284,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </button>
           ))}
         </div>
+      </section>
+
+      {/* My Subjects Management */}
+      <section className="rounded-3xl bg-[var(--color-surface)] border border-[var(--color-border)] p-4 space-y-3.5">
+        <div className="flex items-center gap-2 text-sm font-extrabold">
+          <BookOpen className="w-4 h-4 text-[var(--color-primary)]" />
+          <span>{t.subjects.mySubjects}</span>
+        </div>
+        <SubjectManagerPanel
+          ctx={ctx}
+          onChanged={async () => {
+            await loadSubjects();
+            if (onSubjectsChanged) await onSubjectsChanged();
+          }}
+        />
       </section>
 
       {/* Appearance & Theme */}
@@ -306,11 +425,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="w-full min-h-[42px] rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-xs font-semibold"
           >
             <option value="">--</option>
-            {mainSections.map((s) => (
-              <option key={s.id} value={getSlug(s.id)}>
-                {pickLocalized(s.names)}
-              </option>
-            ))}
+            {(customizableCards && customizableCards.length > 0 ? customizableCards : mainSections).map(
+              (s) => (
+                <option key={s.id} value={getSlug(s.id)}>
+                  {pickLocalized(s.names)}
+                </option>
+              )
+            )}
           </select>
 
           {customSectionSlug && (
@@ -321,8 +442,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="color"
                   value={
                     themeConfig.cardOverrides[customSectionSlug]?.accentColor ||
-                    mainSections.find((s) => getSlug(s.id) === customSectionSlug)?.accentColor ||
-                    '#0f766e'
+                    (customizableCards && customizableCards.length > 0
+                      ? customizableCards
+                      : mainSections
+                    ).find((s) => getSlug(s.id) === customSectionSlug)?.accentColor ||
+                    '#1e40af'
                   }
                   onChange={async (e) => {
                     const updated = await services.theme.updateCardOverride(
@@ -367,6 +491,186 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </section>
 
+      {/* Settings -> Grading Formula Configuration */}
+      {gradingConfig && (
+        <section className="rounded-3xl bg-[var(--color-surface)] border border-[var(--color-border)] p-4 space-y-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm font-extrabold">
+              <Calculator className="w-4 h-4 text-[var(--color-primary)]" />
+              <span>{t.grades.formulaSettingsTitle}</span>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                const reset = await services.grades.resetGradingConfig(gradingConfig);
+                setGradingConfig(reset);
+                setRuleLevelScope('default');
+                setRuleSubjectScope('all');
+              }}
+              className="min-h-[36px] px-3 rounded-xl text-xs font-bold text-[var(--color-primary)] inline-flex items-center gap-1"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>{t.grades.resetFormula}</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div>
+              <label className="block text-[11px] font-bold text-[var(--color-text-muted)] mb-1">
+                {t.grades.levelScope}
+              </label>
+              <select
+                value={ruleLevelScope}
+                onChange={(e) =>
+                  setRuleLevelScope(e.target.value as 'default' | MiddleSchoolLevel)
+                }
+                className="w-full min-h-[42px] rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-xs font-semibold"
+              >
+                <option value="default">{t.grades.allLevelsDefault}</option>
+                <option value="1M">1M</option>
+                <option value="2M">2M</option>
+                <option value="3M">3M</option>
+                <option value="4M">4M</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-[var(--color-text-muted)] mb-1">
+                {t.grades.subjectScope}
+              </label>
+              <select
+                value={
+                  ruleSubjectScope === 'all' || activeSubjects.some((s) => s.id === ruleSubjectScope)
+                    ? ruleSubjectScope
+                    : 'all'
+                }
+                onChange={(e) =>
+                  setRuleSubjectScope(e.target.value as 'all' | GradeSubjectKey)
+                }
+                className="w-full min-h-[42px] rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-xs font-semibold"
+              >
+                <option value="all">{t.grades.allSubjectsDefault}</option>
+                {activeSubjects.map((sub) => (
+                  <option key={sub.id} value={sub.id}>
+                    {pickLocalized(sub.names)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div>
+              <label className="block text-[11px] font-bold text-[var(--color-text-muted)] mb-1">
+                {t.grades.weightContinuous}
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                value={activeRule.continuousWeight}
+                onChange={(e) =>
+                  handleUpdateFormulaRule({
+                    continuousWeight: Math.max(0, Number(e.target.value) || 0),
+                  })
+                }
+                className="w-full min-h-[42px] rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm font-bold tabular-nums"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-[var(--color-text-muted)] mb-1">
+                {t.grades.weightAssignment}
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                value={activeRule.assignmentWeight}
+                onChange={(e) =>
+                  handleUpdateFormulaRule({
+                    assignmentWeight: Math.max(0, Number(e.target.value) || 0),
+                  })
+                }
+                className="w-full min-h-[42px] rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm font-bold tabular-nums"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-[var(--color-text-muted)] mb-1">
+                {t.grades.weightExam}
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                value={activeRule.examWeight}
+                onChange={(e) =>
+                  handleUpdateFormulaRule({
+                    examWeight: Math.max(0, Number(e.target.value) || 0),
+                  })
+                }
+                className="w-full min-h-[42px] rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm font-bold tabular-nums"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-[var(--color-text-muted)] mb-1">
+                {t.grades.maxGradeLabel}
+              </label>
+              <input
+                type="number"
+                min={5}
+                max={100}
+                step={1}
+                value={activeRule.maxGrade}
+                onChange={(e) =>
+                  handleUpdateFormulaRule({
+                    maxGrade: Math.max(1, Number(e.target.value) || 20),
+                  })
+                }
+                className="w-full min-h-[42px] rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm font-bold tabular-nums"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-[var(--color-text-muted)] mb-1">
+              {t.grades.termWeightsLabel}
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {([0, 1, 2] as const).map((idx) => (
+                <input
+                  key={idx}
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={activeRule.annualTermWeights[idx]}
+                  onChange={(e) => {
+                    const next: [number, number, number] = [...activeRule.annualTermWeights] as [
+                      number,
+                      number,
+                      number,
+                    ];
+                    next[idx] = Math.max(0, Number(e.target.value) || 0);
+                    handleUpdateFormulaRule({ annualTermWeights: next });
+                  }}
+                  className="w-full min-h-[40px] rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm font-bold tabular-nums text-center"
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-[var(--color-background)] px-3 py-2 text-xs text-[var(--color-text-muted)] tabular-nums">
+            <span className="font-bold text-[var(--color-text)]">{t.grades.formulaInUse} </span>
+            ({activeRule.continuousWeight}×{t.grades.continuous} + {activeRule.assignmentWeight}×
+            {t.grades.assignment} + {activeRule.examWeight}×{t.grades.exam}) /{' '}
+            {activeRule.continuousWeight + activeRule.assignmentWeight + activeRule.examWeight}
+          </div>
+        </section>
+      )}
+
+      {/* Settings -> Seating Evaluation Criteria */}
+      {user.role !== 'teacher_read' && user.role !== 'banned' && (
+        <SeatingCriteriaSettings ctx={ctx} />
+      )}
+
       {/* Academic-Year Gateway */}
       <section className="rounded-3xl bg-[var(--color-surface)] border border-[var(--color-border)] p-4 space-y-3.5">
         <div className="flex items-center gap-2 text-sm font-extrabold">
@@ -394,6 +698,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </button>
           ))}
         </div>
+
+        {yearArchiveSummary && (
+          <div className="rounded-2xl bg-[var(--color-background)] border border-[var(--color-border)] p-3 space-y-2.5 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-extrabold">{t.library.archiveYearSummary}</span>
+              <span className="font-bold tabular-nums text-[var(--color-text-muted)]">
+                {yearArchiveSummary.fileCount} {t.common.filesCount} ·{' '}
+                {formatFileSize(yearArchiveSummary.totalBytes)}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  const blob = await services.archive.exportYearZip(activeViewingYear.id);
+                  if (!blob) return;
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `year_${activeViewingYear.label.replace(/\//g, '-')}.zip`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="min-h-[38px] px-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] font-bold inline-flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-[var(--color-primary)]" />
+                <span>{t.library.exportYearZip}</span>
+              </button>
+              {user.role === 'primary_admin' && !activeViewingYear.isArchived && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await services.archive.archiveAcademicYear(activeViewingYear.id);
+                    await onYearChanged();
+                  }}
+                  className="min-h-[38px] px-3 rounded-xl bg-amber-600 text-white font-bold inline-flex items-center gap-1.5"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  <span>{t.library.archiveThisYear}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {user.role === 'primary_admin' && (
           <form onSubmit={handleOpenNewYear} className="pt-3 border-t border-[var(--color-border)] space-y-3">
@@ -518,6 +866,58 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span>{t.settings.importBackup}</span>
           </button>
         </div>
+
+        {/* Local Search Index Status */}
+        {indexStatus && (
+          <div className="mt-3 pt-3 border-t border-[var(--color-border)] space-y-2 text-xs">
+            <div className="flex items-center justify-between font-extrabold">
+              <span className="inline-flex items-center gap-1.5">
+                <Search className="w-4 h-4 text-[var(--color-primary)]" />
+                <span>{t.library.searchIndexStatus}</span>
+              </span>
+              <span className="tabular-nums text-[var(--color-primary)]">
+                {indexStatus.indexedFiles} / {indexStatus.totalIndexableFiles}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--color-text-muted)]">
+              <span>
+                {t.library.scannedNeedOcr}:{' '}
+                <strong className="tabular-nums">{indexStatus.scannedUnsearchableCount}</strong>
+              </span>
+              {indexStatus.lastIndexedAt && (
+                <span className="tabular-nums">
+                  {indexStatus.lastIndexedAt.slice(0, 16).replace('T', ' ')}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              disabled={rebuildingIndex}
+              onClick={async () => {
+                setRebuildingIndex(true);
+                setRebuildProgress({ done: 0, total: indexStatus.totalIndexableFiles });
+                try {
+                  const updated = await services.search.rebuildIndex(
+                    activeViewingYear.id,
+                    (done, total) => setRebuildProgress({ done, total })
+                  );
+                  setIndexStatus(updated);
+                } finally {
+                  setRebuildingIndex(false);
+                  setRebuildProgress(null);
+                }
+              }}
+              className="w-full min-h-[42px] rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] text-xs font-bold inline-flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              <RotateCcw className={`w-4 h-4 ${rebuildingIndex ? 'animate-spin' : ''}`} />
+              <span>
+                {rebuildingIndex && rebuildProgress
+                  ? `${t.library.rebuildingIndex} (${rebuildProgress.done}/${rebuildProgress.total})`
+                  : t.library.rebuildIndex}
+              </span>
+            </button>
+          </div>
+        )}
       </section>
 
       <AdminDashboardModal

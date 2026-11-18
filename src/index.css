@@ -2,14 +2,14 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --color-primary: #0f766e;
-  --color-primary-dark: #0b4f4a;
-  --color-primary-light: #e6f4f2;
+  --color-primary: #1e40af;
+  --color-primary-dark: #162e7a;
+  --color-primary-light: #e5ecfc;
   --color-on-primary: #ffffff;
   --color-surface: #ffffff;
-  --color-background: #f5f7f8;
+  --color-background: #f3f6fb;
   --color-text: #0f172a;
-  --color-text-muted: #526071;
+  --color-text-muted: #64748b;
   --color-border: #e2e8f0;
   --color-success: #15803d;
   --color-warning: #b45309;
@@ -88,5 +88,26 @@ body {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  #printable-grades-sheet,
+  #printable-grades-sheet * {
+    visibility: visible !important;
+  }
+  #printable-grades-sheet {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 16px !important;
+  }
+  .no-print {
+    display: none !important;
   }
 }

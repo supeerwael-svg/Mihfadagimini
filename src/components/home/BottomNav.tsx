@@ -1,9 +1,16 @@
 import React from 'react';
-import { CalendarDays, Home, Library, MessageSquare, Settings } from 'lucide-react';
+import {
+  Folder,
+  LayoutGrid,
+  MessageSquare,
+  Settings,
+  TableProperties,
+  Users,
+} from 'lucide-react';
 import { triggerRipple } from '@/src/hooks/useRipple';
 import { useI18n } from '@/src/i18n/I18nContext';
 
-export type NavTab = 'home' | 'library' | 'journal' | 'forum' | 'settings';
+export type NavTab = 'home' | 'forum' | 'classes' | 'grading' | 'library' | 'settings';
 
 interface BottomNavProps {
   activeTab: NavTab;
@@ -13,17 +20,20 @@ interface BottomNavProps {
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onChangeTab }) => {
   const { t } = useI18n();
 
+  // Order for RTL right-to-left (and LTR left-to-right):
+  // Home, Forum, Classes (Student lists), Grading (Grading notebook), Library, Settings
   const items: Array<{ id: NavTab; label: string; Icon: React.FC<{ className?: string }> }> = [
-    { id: 'home', label: t.nav.home, Icon: Home },
-    { id: 'library', label: t.nav.library, Icon: Library },
-    { id: 'journal', label: t.nav.journal, Icon: CalendarDays },
+    { id: 'home', label: t.nav.home, Icon: LayoutGrid },
     { id: 'forum', label: t.nav.forum, Icon: MessageSquare },
+    { id: 'classes', label: t.nav.classes, Icon: Users },
+    { id: 'grading', label: t.nav.grading, Icon: TableProperties },
+    { id: 'library', label: t.nav.library, Icon: Folder },
     { id: 'settings', label: t.nav.settings, Icon: Settings },
   ];
 
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 bg-[var(--color-surface)]/95 backdrop-blur-md border-t border-[var(--color-border)] pb-safe">
-      <div className="mx-auto max-w-4xl grid grid-cols-5 items-center h-16 px-2">
+    <nav className="fixed bottom-0 inset-x-0 z-40 bg-[var(--color-surface)] shadow-[0_-4px_20px_rgba(15,23,42,0.08)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.45)] border-t border-[var(--color-border)]/60 pb-safe">
+      <div className="mx-auto max-w-4xl grid grid-cols-6 items-center h-[72px] px-1">
         {items.map(({ id, label, Icon }) => {
           const active = activeTab === id;
           return (
@@ -34,10 +44,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onChangeTab }) 
                 triggerRipple(e);
                 onChangeTab(id);
               }}
-              className="ripple-surface min-h-[48px] flex flex-col items-center justify-center gap-0.5 rounded-2xl transition-colors"
+              className="ripple-surface min-h-[56px] flex flex-col items-center justify-center gap-1 rounded-2xl transition-colors"
             >
               <span
-                className={`px-3.5 py-1 rounded-full transition-colors ${
+                className={`px-3 py-1 rounded-full transition-colors flex items-center justify-center ${
                   active
                     ? 'bg-[var(--color-primary-light)] text-[var(--color-primary)]'
                     : 'text-[var(--color-text-muted)]'
@@ -46,8 +56,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onChangeTab }) 
                 <Icon className="w-5 h-5" />
               </span>
               <span
-                className={`text-[10px] font-bold truncate max-w-full px-1 ${
-                  active ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-muted)]'
+                className={`text-[11px] leading-none truncate max-w-full px-0.5 ${
+                  active
+                    ? 'font-bold text-[var(--color-primary)]'
+                    : 'font-semibold text-[var(--color-text-muted)]'
                 }`}
               >
                 {label}

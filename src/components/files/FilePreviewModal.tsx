@@ -4,6 +4,8 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
+  Info,
+  Printer,
   RotateCw,
   Search,
   Share2,
@@ -15,7 +17,10 @@ import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useI18n } from '@/src/i18n/I18nContext';
+import { services } from '@/src/services';
+import { getFileTitle } from '@/src/services/FilesService';
 import type { FileRecord } from '@/src/types/models';
+import { formatFileSize } from '@/src/utils/fileFormat';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -24,10 +29,17 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 interface FilePreviewModalProps {
   file: FileRecord | null;
+  initialPage?: number;
   onClose: () => void;
+  onOpenDetails?: (file: FileRecord) => void;
 }
 
-export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClose }) => {
+export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
+  file,
+  initialPage,
+  onClose,
+  onOpenDetails,
+}) => {
   const { t } = useI18n();
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -98,7 +110,11 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
           const doc = await pdfjsLib.getDocument({ data: buf }).promise;
           setPdfDoc(doc);
           setPdfPagesCount(doc.numPages);
-          setPdfPage(1);
+          const startPage = Math.max(
+            1,
+            Math.min(doc.numPages, initialPage || file.lastReadPage || 1)
+          );
+          setPdfPage(startPage);
         } else if (kind === 'docx') {
           const buf = await file.blob.arrayBuffer();
           const res = await mammoth.convertToHtml({ arrayBuffer: buf });
@@ -119,7 +135,9 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
           setSheetsData(map);
         } else if (kind === 'text') {
           const txt = await file.blob.text();
-          setWordHtml(`<pre style="white-space:pre-wrap;font-family:inherit">${txt.replace(/</g, '&lt;')}</pre>`);
+          setWordHtml(
+            `<pre style="white-space:pre-wrap;font-family:inherit">${txt.replace(/</g, '&lt;')}</pre>`
+          );
         }
       } catch (err) {
         setErrorMsg(err instanceof Error ? err.message : 'Preview error');
@@ -133,7 +151,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
     return () => {
       if (url) URL.revokeObjectURL(url);
     };
-  }, [file, kind]);
+  }, [file, kind, initialPage]);
 
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return;
@@ -150,6 +168,9 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
         canvas.height = viewport.height;
         canvas.width = viewport.width;
         await page.render({ canvasContext: context, viewport, canvas }).promise;
+        if (file && !cancelled) {
+          services.files.updateLastReadPage(file.id, pdfPage).catch(() => {});
+        }
       } catch (err) {
         if (!cancelled) setErrorMsg(err instanceof Error ? err.message : 'PDF render error');
       }
@@ -157,68 +178,142 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc, pdfPage, zoom]);
+  }, [pdfDoc, pdfPage, zoom, file]);
 
   if (!file) return null;
 
+  const title = getFileTitle(file);
+
   const handleDownload = () => {
     if (file.externalUrl) {
-      window.open(file.externalUrl, '_blank', 'noopener,noreferrer');
+      const a = document.createElement('a');
+      a.href = file.externalUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.click();
       return;
     }
     if (!objectUrl) return;
     const a = document.createElement('a');
     a.href = objectUrl;
-    a.download = file.name;
+    a.download = file.originalFileName || file.name;
     a.click();
   };
 
   const handleShare = async () => {
     if (file.externalUrl && navigator.share) {
-      await navigator.share({ title: file.name, url: file.externalUrl }).catch(() => {});
+      await navigator.share({ title, url: file.externalUrl }).catch(() => {});
       return;
     }
     if (file.blob && navigator.share) {
-      const shareFile = new File([file.blob], file.name, { type: file.mimeType });
+      const shareFile = new File([file.blob], file.originalFileName || file.name, {
+        type: file.mimeType,
+      });
       if (navigator.canShare && navigator.canShare({ files: [shareFile] })) {
-        await navigator.share({ title: file.name, files: [shareFile] }).catch(() => {});
+        await navigator.share({ title, files: [shareFile] }).catch(() => {});
         return;
       }
     }
     handleDownload();
   };
 
+  const handlePrint = () => {
+    if (kind === 'docx' || kind === 'text') {
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+      const doc = iframe.contentWindow?.document;
+      if (doc) {
+        doc.open();
+        doc.write(
+          `<html><head><title>${title}</title></head><body style="font-family:sans-serif;padding:24px">${wordHtml}</body></html>`
+        );
+        doc.close();
+        setTimeout(() => {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+          setTimeout(() => iframe.remove(), 1200);
+        }, 250);
+      }
+      return;
+    }
+    if (objectUrl && (kind === 'image' || kind === 'pdf')) {
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.src = objectUrl;
+      document.body.appendChild(iframe);
+      iframe.onload = () => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        setTimeout(() => iframe.remove(), 1500);
+      };
+    }
+  };
+
   const currentSheetRows = sheetsData[activeSheet] || [];
   const filteredRows = sheetSearch.trim()
-    ? currentSheetRows.filter((row, idx) =>
-        idx === 0 ||
-        row.some((cell) => cell.toLowerCase().includes(sheetSearch.trim().toLowerCase()))
+    ? currentSheetRows.filter(
+        (row, idx) =>
+          idx === 0 ||
+          row.some((cell) => cell.toLowerCase().includes(sheetSearch.trim().toLowerCase()))
       )
     : currentSheetRows;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[var(--color-background)]">
-      <header className="flex items-center justify-between gap-3 px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
+      <header className="flex items-center justify-between gap-2 px-3 sm:px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2 min-w-0">
           <button
             type="button"
             onClick={onClose}
             aria-label={t.common.close}
-            className="min-h-[44px] min-w-[44px] rounded-xl flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5"
+            className="min-h-[44px] min-w-[44px] rounded-xl flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
           <div className="min-w-0">
-            <h3 className="text-sm font-bold text-[var(--color-text)] truncate">{file.name}</h3>
+            <h3 className="text-sm font-bold text-[var(--color-text)] truncate">{title}</h3>
             <p className="text-[11px] text-[var(--color-text-muted)] tabular-nums">
-              {ext.toUpperCase()} · {(file.size / 1024).toFixed(1)} KB
+              {ext.toUpperCase() || 'LINK'} · {formatFileSize(file.size)}
+              {pdfPagesCount > 0 ? ` · ${pdfPagesCount} ${t.library.pagesLabel}` : ''}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
+          {onOpenDetails && (
+            <button
+              type="button"
+              onClick={() => onOpenDetails(file)}
+              aria-label={t.library.fileDetails}
+              className="min-h-[42px] min-w-[42px] px-2.5 rounded-xl border border-[var(--color-border)] text-xs font-semibold inline-flex items-center justify-center gap-1"
+            >
+              <Info className="w-4 h-4" />
+            </button>
+          )}
+          {(kind === 'pdf' || kind === 'image' || kind === 'docx' || kind === 'text') && (
+            <button
+              type="button"
+              onClick={handlePrint}
+              aria-label={t.library.printFile}
+              className="min-h-[42px] min-w-[42px] px-2.5 rounded-xl border border-[var(--color-border)] text-xs font-semibold inline-flex items-center justify-center gap-1"
+            >
+              <Printer className="w-4 h-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={handleShare}
+            aria-label={t.common.share}
             className="min-h-[42px] px-3 rounded-xl border border-[var(--color-border)] text-xs font-semibold inline-flex items-center gap-1.5"
           >
             <Share2 className="w-4 h-4" />
@@ -227,6 +322,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
           <button
             type="button"
             onClick={handleDownload}
+            aria-label={t.common.download}
             className="min-h-[42px] px-3 rounded-xl bg-[var(--color-primary)] text-[var(--color-on-primary)] text-xs font-semibold inline-flex items-center gap-1.5"
           >
             <Download className="w-4 h-4" />
@@ -259,7 +355,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
 
         {!loading && !errorMsg && kind === 'url' && file.externalUrl && (
           <div className="mx-auto max-w-2xl rounded-3xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 text-center space-y-4">
-            <p className="text-sm font-bold text-[var(--color-text)]">{file.name}</p>
+            <p className="text-sm font-bold text-[var(--color-text)]">{title}</p>
             <p className="text-xs text-[var(--color-text-muted)] break-all">{file.externalUrl}</p>
             <a
               href={file.externalUrl}
@@ -414,7 +510,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
             <div className="overflow-auto max-w-full max-h-[75dvh] rounded-2xl p-2">
               <img
                 src={objectUrl}
-                alt={file.name}
+                alt={title}
                 style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}
                 className="max-h-[70dvh] object-contain transition-transform origin-center rounded-xl"
               />
@@ -424,7 +520,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
 
         {!loading && !errorMsg && kind === 'audio' && objectUrl && (
           <div className="mx-auto max-w-md rounded-3xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 text-center space-y-4">
-            <p className="text-sm font-bold">{file.name}</p>
+            <p className="text-sm font-bold">{title}</p>
             <audio controls src={objectUrl} className="w-full" />
           </div>
         )}

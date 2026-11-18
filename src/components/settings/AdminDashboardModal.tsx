@@ -3,6 +3,7 @@ import { KeyRound, Shield, Trash2, Users, X } from 'lucide-react';
 import { useI18n } from '@/src/i18n/I18nContext';
 import { services } from '@/src/services';
 import type {
+  GradingConfigRecord,
   InviteCodeRecord,
   SectionNode,
   UserRecord,
@@ -34,19 +35,22 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [resetUserId, setResetUserId] = useState<string | null>(null);
   const [newPass, setNewPass] = useState('');
   const [permUser, setPermUser] = useState<UserRecord | null>(null);
+  const [gradingConfig, setGradingConfig] = useState<GradingConfigRecord | null>(null);
 
   const loadData = async () => {
-    const [u, inv] = await Promise.all([
+    const [u, inv, gCfg] = await Promise.all([
       services.auth.listUsers(),
       services.auth.listInviteCodes(ctx.schoolId),
+      services.grades.getGradingConfig(ctx),
     ]);
     setUsers(u);
     setInvites(inv);
+    setGradingConfig(gCfg);
   };
 
   useEffect(() => {
     if (open) loadData();
-  }, [open, ctx.schoolId]);
+  }, [open, ctx.schoolId, ctx.academicYearId]);
 
   if (!open) return null;
 
@@ -239,6 +243,28 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     )}
                   </div>
                 </div>
+
+                {u.role === 'teacher_read' && gradingConfig && (
+                  <label className="flex items-center gap-2 pt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+                    <input
+                      type="checkbox"
+                      checked={gradingConfig.allowReadOnlyViewByUserIds.includes(u.id)}
+                      onChange={async (e) => {
+                        const existing = gradingConfig.allowReadOnlyViewByUserIds;
+                        const nextIds = e.target.checked
+                          ? Array.from(new Set([...existing, u.id]))
+                          : existing.filter((id) => id !== u.id);
+                        const saved = await services.grades.saveGradingConfig({
+                          ...gradingConfig,
+                          allowReadOnlyViewByUserIds: nextIds,
+                        });
+                        setGradingConfig(saved);
+                      }}
+                      className="accent-[var(--color-primary)]"
+                    />
+                    <span>{t.grades.grantReadOnlyTitle}</span>
+                  </label>
+                )}
 
                 {permUser?.id === u.id && (
                   <div className="pt-2 border-t border-[var(--color-border)] max-h-48 overflow-auto space-y-1.5">

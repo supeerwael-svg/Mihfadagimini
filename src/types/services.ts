@@ -3,17 +3,31 @@ import type {
   AnnouncementRecord,
   AppMetaRecord,
   BaseRecord,
+  BehaviorConfigRecord,
+  BehaviorCriterionRecord,
+  BehaviorEventRecord,
   ChatMessageRecord,
   ChatRoomRecord,
   ClassRoomRecord,
   FileRecord,
+  FileSearchIndexRecord,
+  FileVersionRecord,
   ForumCommentRecord,
   ForumTopicRecord,
+  GradeHistoryRecord,
+  GradeRecord,
+  GradingConfigRecord,
   InviteCodeRecord,
   JournalEntryRecord,
+  LibraryCollectionRecord,
+  SavedSearchRecord,
   SchoolRecord,
+  SeatingPlanRecord,
   SectionNode,
   SeminarRecord,
+  StudentRecord,
+  SubjectRecord,
+  TagRecord,
   ThemeConfigRecord,
   UserRecord,
 } from './models';
@@ -26,7 +40,21 @@ export type TableName =
   | 'academicYears'
   | 'sections'
   | 'files'
+  | 'tags'
+  | 'collections'
+  | 'savedSearches'
+  | 'searchIndex'
+  | 'fileVersions'
   | 'classRooms'
+  | 'subjects'
+  | 'students'
+  | 'grades'
+  | 'gradeHistory'
+  | 'gradingConfigs'
+  | 'seatingPlans'
+  | 'behaviorCriteria'
+  | 'behaviorEvents'
+  | 'behaviorConfigs'
   | 'journalEntries'
   | 'seminars'
   | 'forumTopics'
@@ -43,7 +71,21 @@ export interface TableTypeMap {
   academicYears: AcademicYearRecord;
   sections: SectionNode;
   files: FileRecord;
+  tags: TagRecord;
+  collections: LibraryCollectionRecord;
+  savedSearches: SavedSearchRecord;
+  searchIndex: FileSearchIndexRecord;
+  fileVersions: FileVersionRecord;
   classRooms: ClassRoomRecord;
+  subjects: SubjectRecord;
+  students: StudentRecord;
+  grades: GradeRecord;
+  gradeHistory: GradeHistoryRecord;
+  gradingConfigs: GradingConfigRecord;
+  seatingPlans: SeatingPlanRecord;
+  behaviorCriteria: BehaviorCriterionRecord;
+  behaviorEvents: BehaviorEventRecord;
+  behaviorConfigs: BehaviorConfigRecord;
   journalEntries: JournalEntryRecord;
   seminars: SeminarRecord;
   forumTopics: ForumTopicRecord;

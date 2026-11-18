@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Archive,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
@@ -7,48 +8,75 @@ import {
   Edit3,
   Eye,
   EyeOff,
-  Folder,
   FolderPlus,
+  Link2,
+  Plus,
   RotateCcw,
   Trash2,
+  UploadCloud,
+  X,
 } from 'lucide-react';
 import { useI18n } from '@/src/i18n/I18nContext';
 import { services } from '@/src/services';
 import type {
   FileRecord,
+  GradeSubjectKey,
   LocalizedText,
+  MiddleSchoolLevel,
   SectionNode,
+  SubjectRecord,
   UserRecord,
 } from '@/src/types/models';
 import type { ServiceContext } from '@/src/types/services';
+import { formatFileSize } from '@/src/utils/fileFormat';
 import { DynamicIcon } from '@/src/components/common/DynamicIcon';
 import { FileList } from '@/src/components/files/FileList';
 import { FileUploadBar } from '@/src/components/files/FileUploadBar';
+import { GradingNotebookView } from '@/src/components/grades/GradingNotebookView';
 import { DailyJournalView } from '@/src/components/journal/DailyJournalView';
 import { ForumAndChatView } from '@/src/components/forum/ForumAndChatView';
 import { SeminarsView } from './SeminarsView';
 import { StudentListsView } from './StudentListsView';
 
+export interface GradeNavTarget {
+  level?: MiddleSchoolLevel;
+  classId?: string;
+  term?: 1 | 2 | 3 | 'year';
+  subject?: GradeSubjectKey;
+}
+
 interface SectionExplorerProps {
   ctx: ServiceContext;
   user: UserRecord;
+  schoolName: string;
   currentSection: SectionNode;
   isArchiveYear: boolean;
+  gradeNavTarget?: GradeNavTarget | null;
+  subjects?: SubjectRecord[];
   onNavigateSection: (sec: SectionNode | null) => void;
-  onOpenFile: (file: FileRecord) => void;
+  onJumpToSectionSlug?: (slug: string, navTarget?: GradeNavTarget) => void;
+  onOpenFile: (file: FileRecord, initialPage?: number) => void;
+  onOpenDetails?: (file: FileRecord) => void;
   onStructureChanged: () => Promise<void>;
   onClassesSynced: () => Promise<void>;
+  onSubjectsChanged?: () => Promise<void>;
 }
 
 export const SectionExplorer: React.FC<SectionExplorerProps> = ({
   ctx,
   user,
+  schoolName,
   currentSection,
   isArchiveYear,
+  gradeNavTarget,
+  subjects,
   onNavigateSection,
+  onJumpToSectionSlug,
   onOpenFile,
+  onOpenDetails,
   onStructureChanged,
   onClassesSynced,
+  onSubjectsChanged,
 }) => {
   const { t, dir, pickLocalized } = useI18n();
   const [breadcrumb, setBreadcrumb] = useState<SectionNode[]>([]);
@@ -67,6 +95,10 @@ export const SectionExplorer: React.FC<SectionExplorerProps> = ({
   const [deleteTarget, setDeleteTarget] = useState<SectionNode | null>(null);
   const [deleteMode, setDeleteMode] = useState<'move_files' | 'delete_files'>('move_files');
   const [moveTargetId, setMoveTargetId] = useState('');
+  const [fabMenuOpen, setFabMenuOpen] = useState(false);
+
+  const triggerUploadRef = useRef<(() => void) | null>(null);
+  const triggerUrlRef = useRef<(() => void) | null>(null);
 
   const perm = services.auth.getEffectivePermission(user, currentSection.id);
   const canWrite = !isArchiveYear && perm.write;
@@ -94,6 +126,7 @@ export const SectionExplorer: React.FC<SectionExplorerProps> = ({
   };
 
   useEffect(() => {
+    setFabMenuOpen(false);
     loadSectionData();
   }, [currentSection.id, ctx.academicYearId]);
 
@@ -168,16 +201,24 @@ export const SectionExplorer: React.FC<SectionExplorerProps> = ({
     }
   };
 
+  const handleArchiveFolder = async () => {
+    await services.archive.archiveFolder(ctx.academicYearId, currentSection.id);
+    await onStructureChanged();
+    const parent = breadcrumb.length > 1 ? breadcrumb[breadcrumb.length - 2] : null;
+    onNavigateSection(parent);
+  };
+
   const BackIcon = dir === 'rtl' ? ArrowRight : ArrowLeft;
 
   const isLeafOrStandard =
     currentSection.featureType !== 'student_lists' &&
+    currentSection.featureType !== 'grading_notebook' &&
     currentSection.featureType !== 'daily_journal' &&
     currentSection.featureType !== 'seminars' &&
     currentSection.featureType !== 'forum_chat';
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${isLeafOrStandard ? 'pb-20' : ''}`}>
       {/* Header & Breadcrumb */}
       <div className="rounded-3xl bg-[var(--color-surface)] border border-[var(--color-border)] p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
@@ -202,7 +243,7 @@ export const SectionExplorer: React.FC<SectionExplorerProps> = ({
                   setRenameNames({ ...currentSection.names });
                 }}
                 title={t.sections.editNames}
-                className="min-h-[40px] px-3 rounded-xl border border-[var(--color-border)] text-xs font-semibold inline-flex items-center gap-1"
+                className="min-h-[40px] px-2.5 rounded-xl border border-[var(--color-border)] text-xs font-semibold inline-flex items-center gap-1"
               >
                 <Edit3 className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">{t.common.rename}</span>
@@ -211,11 +252,21 @@ export const SectionExplorer: React.FC<SectionExplorerProps> = ({
                 type="button"
                 onClick={() => handleRestoreDefault(currentSection)}
                 title={t.common.restoreDefault}
-                className="min-h-[40px] px-3 rounded-xl border border-[var(--color-border)] text-xs font-semibold inline-flex items-center gap-1"
+                className="min-h-[40px] px-2.5 rounded-xl border border-[var(--color-border)] text-xs font-semibold inline-flex items-center gap-1"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">{t.common.restoreDefault}</span>
               </button>
+              {isLeafOrStandard && (
+                <button
+                  type="button"
+                  onClick={handleArchiveFolder}
+                  title={t.library.archiveFolder}
+                  className="min-h-[40px] min-w-[40px] rounded-xl border border-[var(--color-border)] flex items-center justify-center text-[var(--color-text-muted)]"
+                >
+                  <Archive className="w-4 h-4" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -256,10 +307,37 @@ export const SectionExplorer: React.FC<SectionExplorerProps> = ({
       {currentSection.featureType === 'student_lists' && (
         <StudentListsView
           ctx={ctx}
+          user={user}
+          schoolName={schoolName}
+          isArchiveYear={isArchiveYear}
           canWrite={canWrite}
-          initialLevel={currentSection.levelCode ?? '1M'}
+          subjects={subjects}
+          initialLevel={gradeNavTarget?.level ?? currentSection.levelCode ?? '1M'}
+          initialClassId={gradeNavTarget?.classId}
           onOpenFile={onOpenFile}
           onClassesSynced={onClassesSynced}
+          onSubjectsChanged={onSubjectsChanged ?? onStructureChanged}
+          onOpenInNotebook={(level, classId, term, subject) =>
+            onJumpToSectionSlug?.('sec_02_grading_nb', { level, classId, term, subject })
+          }
+        />
+      )}
+
+      {currentSection.featureType === 'grading_notebook' && (
+        <GradingNotebookView
+          ctx={ctx}
+          user={user}
+          schoolName={schoolName}
+          isArchiveYear={isArchiveYear}
+          subjects={subjects}
+          initialLevel={gradeNavTarget?.level}
+          initialClassId={gradeNavTarget?.classId}
+          initialTerm={gradeNavTarget?.term}
+          initialSubject={gradeNavTarget?.subject}
+          onSubjectsChanged={onSubjectsChanged ?? onStructureChanged}
+          onOpenClassList={(level, classId) =>
+            onJumpToSectionSlug?.('sec_08_students', { level, classId })
+          }
         />
       )}
 
@@ -288,19 +366,34 @@ export const SectionExplorer: React.FC<SectionExplorerProps> = ({
       {/* Standard / Assignments & Exams / Audio-Visual Folder Navigation */}
       {isLeafOrStandard && (
         <>
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-extrabold text-[var(--color-text)]">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-extrabold text-[var(--color-text)] truncate">
               {pickLocalized(currentSection.names)}
             </h3>
             {canWrite && (
-              <button
-                type="button"
-                onClick={() => setShowAddChild((v) => !v)}
-                className="min-h-[40px] px-3 rounded-xl bg-[var(--color-primary-light)] text-[var(--color-primary)] text-xs font-bold inline-flex items-center gap-1.5"
-              >
-                <FolderPlus className="w-4 h-4" />
-                <span>{t.sections.addSubfolder}</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <FileUploadBar
+                  ctx={ctx}
+                  sectionId={currentSection.id}
+                  sectionName={pickLocalized(currentSection.names)}
+                  subjects={subjects}
+                  termNumber={currentSection.termNumber}
+                  allowExternalUrl={currentSection.featureType === 'audiovisual'}
+                  disabled={!canWrite}
+                  compact
+                  triggerUploadRef={triggerUploadRef}
+                  triggerUrlRef={triggerUrlRef}
+                  onUploaded={loadSectionData}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowAddChild((v) => !v)}
+                  className="min-h-[40px] px-3 rounded-xl bg-[var(--color-primary-light)] text-[var(--color-primary)] text-xs font-bold inline-flex items-center gap-1.5"
+                >
+                  <FolderPlus className="w-4 h-4" />
+                  <span>{t.sections.addSubfolder}</span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -382,7 +475,7 @@ export const SectionExplorer: React.FC<SectionExplorerProps> = ({
                         </div>
                         <div className="text-[11px] text-[var(--color-text-muted)] tabular-nums">
                           {st.count} {t.common.filesCount}
-                          {st.totalBytes > 0 ? ` · ${(st.totalBytes / 1024).toFixed(0)} KB` : ''}
+                          {st.totalBytes > 0 ? ` · ${formatFileSize(st.totalBytes)}` : ''}
                         </div>
                       </div>
                     </button>
@@ -448,25 +541,74 @@ export const SectionExplorer: React.FC<SectionExplorerProps> = ({
             </div>
           )}
 
-          <div className="space-y-3 pt-2">
-            <FileUploadBar
-              ctx={ctx}
-              sectionId={currentSection.id}
-              termNumber={currentSection.termNumber}
-              allowExternalUrl={currentSection.featureType === 'audiovisual'}
-              disabled={!canWrite}
-              onUploaded={loadSectionData}
-            />
-
+          <div className="pt-1">
             <FileList
+              ctx={ctx}
+              user={user}
               files={files}
               allSections={allSections}
+              subjects={subjects}
               canWrite={canWrite}
               showSolutionSupport={currentSection.featureType === 'assignments_exams'}
               onOpenFile={onOpenFile}
+              onOpenDetails={onOpenDetails}
               onChanged={loadSectionData}
             />
           </div>
+
+          {/* Floating + Action Button staying cleanly above BottomNav */}
+          {canWrite && (
+            <div className="fixed bottom-24 end-4 z-30 flex flex-col items-end gap-2">
+              {fabMenuOpen && (
+                <div className="rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xl p-1.5 flex flex-col gap-1 min-w-[175px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFabMenuOpen(false);
+                      triggerUploadRef.current?.();
+                    }}
+                    className="min-h-[42px] px-3 rounded-xl text-xs font-bold text-start flex items-center gap-2 hover:bg-black/5 dark:hover:bg-white/5"
+                  >
+                    <UploadCloud className="w-4 h-4 text-[var(--color-primary)] shrink-0" />
+                    <span className="truncate max-w-[160px]">{t.files.uploadPrompt}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFabMenuOpen(false);
+                      setShowAddChild(true);
+                    }}
+                    className="min-h-[42px] px-3 rounded-xl text-xs font-bold text-start flex items-center gap-2 hover:bg-black/5 dark:hover:bg-white/5"
+                  >
+                    <FolderPlus className="w-4 h-4 text-[var(--color-primary)]" />
+                    <span>{t.sections.addSubfolder}</span>
+                  </button>
+                  {currentSection.featureType === 'audiovisual' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFabMenuOpen(false);
+                        triggerUrlRef.current?.();
+                      }}
+                      className="min-h-[42px] px-3 rounded-xl text-xs font-bold text-start flex items-center gap-2 hover:bg-black/5 dark:hover:bg-white/5"
+                    >
+                      <Link2 className="w-4 h-4 text-[var(--color-primary)]" />
+                      <span>{t.sections.addExternalUrl}</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setFabMenuOpen((v) => !v)}
+                aria-label={t.common.add}
+                className="w-13 h-13 rounded-full bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-lg flex items-center justify-center active:scale-95 transition-transform"
+              >
+                {fabMenuOpen ? <X className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
+              </button>
+            </div>
+          )}
         </>
       )}
 

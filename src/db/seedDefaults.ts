@@ -7,7 +7,25 @@ import type {
   ThemePalette,
 } from '@/src/types/models';
 
+export const CARD_ACCENT_CYCLE = [
+  '#f59e0b', // amber
+  '#0d9488', // teal
+  '#4f46e5', // indigo
+  '#64748b', // slate
+  '#a855f7', // purple
+  '#0ea5e9', // sky blue
+  '#16a34a', // green
+  '#e11d48', // rose
+] as const;
+
 export const THEME_PALETTES: ThemePalette[] = [
+  {
+    id: 'deep_sapphire',
+    names: { ar: 'الأزرق الأكاديمي الداكن', en: 'Deep Academic Blue', fr: 'Bleu Académique Profond' },
+    primary: '#1e40af',
+    surfaceLight: '#ffffff',
+    bgLight: '#f3f6fb',
+  },
   {
     id: 'emerald_olive',
     names: { ar: 'الزمرد التربوي', en: 'Pedagogical Emerald', fr: 'Émeraude Pédagogique' },
@@ -21,13 +39,6 @@ export const THEME_PALETTES: ThemePalette[] = [
     primary: '#3730a3',
     surfaceLight: '#ffffff',
     bgLight: '#f6f7fb',
-  },
-  {
-    id: 'deep_sapphire',
-    names: { ar: 'الأزرق السماوي الداكن', en: 'Deep Sapphire', fr: 'Saphir Profond' },
-    primary: '#1d4ed8',
-    surfaceLight: '#ffffff',
-    bgLight: '#f4f7fb',
   },
   {
     id: 'crimson_maroon',
@@ -73,24 +84,20 @@ export const THEME_PALETTES: ThemePalette[] = [
   },
 ];
 
-const LEVELS: Array<{ code: MiddleSchoolLevel; names: LocalizedText }> = [
+export const MIDDLE_SCHOOL_LEVELS: Array<{ code: MiddleSchoolLevel; names: LocalizedText }> = [
   { code: '1M', names: { ar: 'السنة الأولى متوسط', en: '1st Year Middle School', fr: '1ère Année Moyenne' } },
   { code: '2M', names: { ar: 'السنة الثانية متوسط', en: '2nd Year Middle School', fr: '2ème Année Moyenne' } },
   { code: '3M', names: { ar: 'السنة الثالثة متوسط', en: '3rd Year Middle School', fr: '3ème Année Moyenne' } },
   { code: '4M', names: { ar: 'السنة الرابعة متوسط', en: '4th Year Middle School', fr: '4ème Année Moyenne' } },
 ];
 
-const TERMS: Array<{ num: 1 | 2 | 3; names: LocalizedText }> = [
+export const SCHOOL_TERMS: Array<{ num: 1 | 2 | 3; names: LocalizedText }> = [
   { num: 1, names: { ar: 'الفصل الأول', en: 'First Term', fr: '1er Trimestre' } },
   { num: 2, names: { ar: 'الفصل الثاني', en: 'Second Term', fr: '2ème Trimestre' } },
   { num: 3, names: { ar: 'الفصل الثالث', en: 'Third Term', fr: '3ème Trimestre' } },
 ];
 
-const SUBJ_HIST: LocalizedText = { ar: 'التاريخ', en: 'History', fr: 'Histoire' };
-const SUBJ_GEO: LocalizedText = { ar: 'الجغرافيا', en: 'Geography', fr: 'Géographie' };
-const SUBJ_CIVIC: LocalizedText = { ar: 'التربية المدنية', en: 'Civic Education', fr: 'Éducation Civique' };
-const SUBJ_PE: LocalizedText = { ar: 'التربية البدنية', en: 'Physical Education', fr: 'Éducation Physique' };
-const SUBJ_HG: LocalizedText = { ar: 'التاريخ والجغرافيا', en: 'History & Geography', fr: 'Histoire & Géographie' };
+const LEVELS = MIDDLE_SCHOOL_LEVELS;
 
 export function buildDefaultSectionsForYear(
   ownerId: string,
@@ -148,7 +155,7 @@ export function buildDefaultSectionsForYear(
     kind: 'main',
     names: { ar: 'المذكرات البيداغوجية والدروس', en: 'Pedagogical Notes & Lessons', fr: 'Fiches Pédagogiques & Cours' },
     icon: 'BookOpen',
-    accentColor: '#0f766e',
+    accentColor: CARD_ACCENT_CYCLE[0],
     order: 1,
   });
   LEVELS.forEach((lvl, li) => {
@@ -179,22 +186,6 @@ export function buildDefaultSectionsForYear(
         order: bi + 1,
         levelCode: lvl.code,
       });
-      [
-        { k: 'hist', n: SUBJ_HIST, i: 'Landmark' },
-        { k: 'geo', n: SUBJ_GEO, i: 'Globe' },
-        { k: 'pe', n: SUBJ_PE, i: 'Activity' },
-      ].forEach((s, si) => {
-        pushNode({
-          id: sid(`sec_01_${lvl.code}_${b.key}_${s.k}`),
-          parentId: bId,
-          kind: 'subject',
-          names: s.n,
-          icon: s.i,
-          accentColor: '#0f766e',
-          order: si + 1,
-          levelCode: lvl.code,
-        });
-      });
     });
   });
 
@@ -205,24 +196,25 @@ export function buildDefaultSectionsForYear(
     kind: 'main',
     names: { ar: 'وثائق الأستاذ', en: 'Teacher Documents', fr: 'Documents du Professeur' },
     icon: 'FolderKanban',
-    accentColor: '#1d4ed8',
+    accentColor: '#1e40af',
     order: 2,
   });
   [
-    { k: 'curriculum', n: { ar: 'المنهاج والوثيقة المرافقة', en: 'Curriculum', fr: 'Programme Officiel' } },
-    { k: 'training_nb', n: { ar: 'دفتر التكوين', en: 'Training Notebook', fr: 'Cahier de Formation' } },
-    { k: 'daily_nb', n: { ar: 'الدفتر اليومي', en: 'Daily Notebook', fr: 'Cahier Journal' } },
-    { k: 'planning', n: { ar: 'التخطيط والتدرجات السنوية', en: 'Planning & Progressions', fr: 'Planification & Progressions' } },
-    { k: 'grading_nb', n: { ar: 'دفتر التنقيط', en: 'Grading Notebook', fr: 'Cahier de Notes' } },
-    { k: 'supervised_doc', n: { ar: 'الوثيقة الموجهة', en: 'Supervised Document', fr: 'Document Encadré' } },
+    { k: 'curriculum', icon: 'BookOpen', n: { ar: 'المنهاج والوثيقة المرافقة', en: 'Curriculum', fr: 'Programme Officiel' } },
+    { k: 'training_nb', icon: 'GraduationCap', n: { ar: 'دفتر التكوين', en: 'Training Notebook', fr: 'Cahier de Formation' } },
+    { k: 'daily_nb', icon: 'NotebookPen', n: { ar: 'الدفتر اليومي', en: 'Daily Notebook', fr: 'Cahier Journal' } },
+    { k: 'planning', icon: 'CalendarRange', n: { ar: 'التخطيط والتدرجات السنوية', en: 'Planning & Progressions', fr: 'Planification & Progressions' } },
+    { k: 'grading_nb', icon: 'ListChecks', n: { ar: 'دفتر التنقيط', en: 'Grading Notebook', fr: 'Cahier de Notes' } },
+    { k: 'supervised_doc', icon: 'FileCheck2', n: { ar: 'الوثيقة الموجهة', en: 'Supervised Document', fr: 'Document Encadré' } },
   ].forEach((d, idx) => {
     pushNode({
       id: sid(`sec_02_${d.k}`),
       parentId: sid('sec_02'),
       kind: 'subsection',
+      featureType: d.k === 'grading_nb' ? 'grading_notebook' : 'standard',
       names: d.n,
-      icon: 'FileSpreadsheet',
-      accentColor: '#1d4ed8',
+      icon: d.icon,
+      accentColor: CARD_ACCENT_CYCLE[idx % CARD_ACCENT_CYCLE.length],
       order: idx + 1,
     });
   });
@@ -235,7 +227,7 @@ export function buildDefaultSectionsForYear(
     featureType: 'assignments_exams',
     names: { ar: 'الفروض والاختبارات', en: 'Assignments & Exams', fr: 'Devoirs & Examens' },
     icon: 'ClipboardCheck',
-    accentColor: '#b45309',
+    accentColor: CARD_ACCENT_CYCLE[1],
     order: 3,
   });
   // 3.1 Diagnostic assessment
@@ -263,25 +255,9 @@ export function buildDefaultSectionsForYear(
       order: li + 1,
       levelCode: lvl.code,
     });
-    [
-      { k: 'hg', n: SUBJ_HG },
-      { k: 'civic', n: SUBJ_CIVIC },
-    ].forEach((s, si) => {
-      pushNode({
-        id: sid(`sec_03_diag_${lvl.code}_${s.k}`),
-        parentId: lId,
-        kind: 'subject',
-        featureType: 'assignments_exams',
-        names: s.n,
-        icon: 'FileCheck',
-        accentColor: '#b45309',
-        order: si + 1,
-        levelCode: lvl.code,
-      });
-    });
   });
 
-  // 3.2 Assignments (level -> subject -> Term 1, 2, 3)
+  // 3.2 Assignments (level -> dynamic subject -> Term 1, 2, 3)
   const assignId = sid('sec_03_assign');
   pushNode({
     id: assignId,
@@ -306,40 +282,9 @@ export function buildDefaultSectionsForYear(
       order: li + 1,
       levelCode: lvl.code,
     });
-    [
-      { k: 'hg', n: SUBJ_HG },
-      { k: 'civic', n: SUBJ_CIVIC },
-    ].forEach((s, si) => {
-      const sId = sid(`sec_03_assign_${lvl.code}_${s.k}`);
-      pushNode({
-        id: sId,
-        parentId: lId,
-        kind: 'subject',
-        featureType: 'assignments_exams',
-        names: s.n,
-        icon: 'BookMarked',
-        accentColor: '#b45309',
-        order: si + 1,
-        levelCode: lvl.code,
-      });
-      TERMS.forEach((t) => {
-        pushNode({
-          id: sid(`sec_03_assign_${lvl.code}_${s.k}_t${t.num}`),
-          parentId: sId,
-          kind: 'term',
-          featureType: 'assignments_exams',
-          names: t.names,
-          icon: 'CalendarRange',
-          accentColor: '#b45309',
-          order: t.num,
-          levelCode: lvl.code,
-          termNumber: t.num,
-        });
-      });
-    });
   });
 
-  // 3.3 Term exams (level -> subject -> term, linked to model solution)
+  // 3.3 Term exams (level -> dynamic subject -> term, linked to model solution)
   const examsId = sid('sec_03_exams');
   pushNode({
     id: examsId,
@@ -364,37 +309,6 @@ export function buildDefaultSectionsForYear(
       order: li + 1,
       levelCode: lvl.code,
     });
-    [
-      { k: 'hg', n: SUBJ_HG },
-      { k: 'civic', n: SUBJ_CIVIC },
-    ].forEach((s, si) => {
-      const sId = sid(`sec_03_exams_${lvl.code}_${s.k}`);
-      pushNode({
-        id: sId,
-        parentId: lId,
-        kind: 'subject',
-        featureType: 'assignments_exams',
-        names: s.n,
-        icon: 'BookMarked',
-        accentColor: '#b45309',
-        order: si + 1,
-        levelCode: lvl.code,
-      });
-      TERMS.forEach((t) => {
-        pushNode({
-          id: sid(`sec_03_exams_${lvl.code}_${s.k}_t${t.num}`),
-          parentId: sId,
-          kind: 'term',
-          featureType: 'assignments_exams',
-          names: t.names,
-          icon: 'CalendarRange',
-          accentColor: '#b45309',
-          order: t.num,
-          levelCode: lvl.code,
-          termNumber: t.num,
-        });
-      });
-    });
   });
 
   // 3.4 Middle School Certificate exams (BEM)
@@ -409,34 +323,6 @@ export function buildDefaultSectionsForYear(
     accentColor: '#b45309',
     order: 4,
   });
-  [
-    { k: 'hg', n: SUBJ_HG },
-    { k: 'pe', n: SUBJ_PE },
-  ].forEach((s, si) => {
-    const sId = sid(`sec_03_bem_${s.k}`);
-    pushNode({
-      id: sId,
-      parentId: bemId,
-      kind: 'subject',
-      featureType: 'assignments_exams',
-      names: s.n,
-      icon: 'Award',
-      accentColor: '#b45309',
-      order: si + 1,
-    });
-    ['2024', '2025', '2026'].forEach((yr, yi) => {
-      pushNode({
-        id: sid(`sec_03_bem_${s.k}_${yr}`),
-        parentId: sId,
-        kind: 'subsection',
-        featureType: 'assignments_exams',
-        names: { ar: `دورة ${yr}`, en: `Session ${yr}`, fr: `Session ${yr}` },
-        icon: 'Calendar',
-        accentColor: '#b45309',
-        order: yi + 1,
-      });
-    });
-  });
 
   // 3.5 Remedial exam
   const remId = sid('sec_03_remedial');
@@ -450,21 +336,6 @@ export function buildDefaultSectionsForYear(
     accentColor: '#b45309',
     order: 5,
   });
-  [
-    { k: 'hg', n: SUBJ_HG },
-    { k: 'civic', n: SUBJ_CIVIC },
-  ].forEach((s, si) => {
-    pushNode({
-      id: sid(`sec_03_remedial_${s.k}`),
-      parentId: remId,
-      kind: 'subject',
-      featureType: 'assignments_exams',
-      names: s.n,
-      icon: 'FileCheck',
-      accentColor: '#b45309',
-      order: si + 1,
-    });
-  });
 
   // 4. Pedagogical training
   pushNode({
@@ -473,7 +344,7 @@ export function buildDefaultSectionsForYear(
     kind: 'main',
     names: { ar: 'التكوين البيداغوجي', en: 'Pedagogical Training', fr: 'Formation Pédagogique' },
     icon: 'Compass',
-    accentColor: '#6d28d9',
+    accentColor: CARD_ACCENT_CYCLE[2],
     order: 4,
   });
   [
@@ -489,7 +360,7 @@ export function buildDefaultSectionsForYear(
       kind: 'subsection',
       names: t.n,
       icon: 'BookOpenCheck',
-      accentColor: '#6d28d9',
+      accentColor: CARD_ACCENT_CYCLE[2],
       order: idx + 1,
     });
   });
@@ -501,36 +372,8 @@ export function buildDefaultSectionsForYear(
     kind: 'main',
     names: { ar: 'الكتب الداعمة', en: 'Supporting Books', fr: 'Manuels & Livres de Soutien' },
     icon: 'Library',
-    accentColor: '#0369a1',
+    accentColor: CARD_ACCENT_CYCLE[3],
     order: 5,
-  });
-  [
-    { k: 'hist', n: SUBJ_HIST, i: 'Landmark' },
-    { k: 'geo', n: SUBJ_GEO, i: 'Globe' },
-    { k: 'civic', n: SUBJ_CIVIC, i: 'Scale' },
-  ].forEach((s, si) => {
-    const sId = sid(`sec_05_${s.k}`);
-    pushNode({
-      id: sId,
-      parentId: sid('sec_05'),
-      kind: 'subject',
-      names: s.n,
-      icon: s.i,
-      accentColor: '#0369a1',
-      order: si + 1,
-    });
-    LEVELS.forEach((lvl, li) => {
-      pushNode({
-        id: sid(`sec_05_${s.k}_${lvl.code}`),
-        parentId: sId,
-        kind: 'level',
-        names: lvl.names,
-        icon: 'Book',
-        accentColor: '#0369a1',
-        order: li + 1,
-        levelCode: lvl.code,
-      });
-    });
   });
   const sec5MiscId = sid('sec_05_misc');
   pushNode({
@@ -540,7 +383,7 @@ export function buildDefaultSectionsForYear(
     names: { ar: 'متفرقات', en: 'Miscellaneous', fr: 'Divers' },
     icon: 'FolderOpen',
     accentColor: '#0369a1',
-    order: 4,
+    order: 100,
   });
   [
     { k: 'summaries', n: { ar: 'ملخصات', en: 'Summaries', fr: 'Résumés' } },
@@ -564,7 +407,7 @@ export function buildDefaultSectionsForYear(
     kind: 'main',
     names: { ar: 'الوسائل التعليمية', en: 'Teaching Aids', fr: 'Supports Pédagogiques' },
     icon: 'Map',
-    accentColor: '#15803d',
+    accentColor: CARD_ACCENT_CYCLE[4],
     order: 6,
   });
   [
@@ -631,7 +474,7 @@ export function buildDefaultSectionsForYear(
     kind: 'main',
     names: { ar: 'الوثائق الإدارية', en: 'Administrative Documents', fr: 'Documents Administratifs' },
     icon: 'Briefcase',
-    accentColor: '#475569',
+    accentColor: CARD_ACCENT_CYCLE[5],
     order: 7,
   });
   [
@@ -645,7 +488,7 @@ export function buildDefaultSectionsForYear(
       kind: 'subsection',
       names: ad.n,
       icon: 'FileText',
-      accentColor: '#475569',
+      accentColor: CARD_ACCENT_CYCLE[5],
       order: idx + 1,
     });
   });
@@ -658,7 +501,7 @@ export function buildDefaultSectionsForYear(
     featureType: 'student_lists',
     names: { ar: 'قوائم التلاميذ (Excel)', en: 'Student Lists (Excel)', fr: 'Listes des Élèves (Excel)' },
     icon: 'Table',
-    accentColor: '#0d9488',
+    accentColor: CARD_ACCENT_CYCLE[6],
     order: 8,
   });
   LEVELS.forEach((lvl, li) => {
@@ -669,7 +512,7 @@ export function buildDefaultSectionsForYear(
       featureType: 'student_lists',
       names: lvl.names,
       icon: 'Users',
-      accentColor: '#0d9488',
+      accentColor: CARD_ACCENT_CYCLE[6],
       order: li + 1,
       levelCode: lvl.code,
     });
@@ -682,7 +525,7 @@ export function buildDefaultSectionsForYear(
     kind: 'main',
     names: { ar: 'الأعياد الوطنية', en: 'National Celebrations', fr: 'Fêtes Nationales' },
     icon: 'Flag',
-    accentColor: '#be123c',
+    accentColor: CARD_ACCENT_CYCLE[7],
     order: 9,
   });
   [
@@ -696,7 +539,7 @@ export function buildDefaultSectionsForYear(
       kind: 'subsection',
       names: nc.n,
       icon: 'Sparkles',
-      accentColor: '#be123c',
+      accentColor: CARD_ACCENT_CYCLE[7],
       order: idx + 1,
     });
   });
@@ -709,7 +552,7 @@ export function buildDefaultSectionsForYear(
     featureType: 'audiovisual',
     names: { ar: 'السمعي البصري', en: 'Audio-Visual', fr: 'Audiovisuel' },
     icon: 'Film',
-    accentColor: '#7c3aed',
+    accentColor: CARD_ACCENT_CYCLE[0],
     order: 10,
   });
   [
@@ -725,7 +568,7 @@ export function buildDefaultSectionsForYear(
       featureType: 'audiovisual',
       names: av.n,
       icon: av.i,
-      accentColor: '#7c3aed',
+      accentColor: CARD_ACCENT_CYCLE[0],
       order: ai + 1,
     });
     LEVELS.forEach((lvl, li) => {
@@ -736,7 +579,7 @@ export function buildDefaultSectionsForYear(
         featureType: 'audiovisual',
         names: lvl.names,
         icon: av.i,
-        accentColor: '#7c3aed',
+        accentColor: CARD_ACCENT_CYCLE[0],
         order: li + 1,
         levelCode: lvl.code,
       });
@@ -750,7 +593,7 @@ export function buildDefaultSectionsForYear(
     kind: 'main',
     names: { ar: 'الشهادات', en: 'Certificates', fr: 'Attestations & Diplômes' },
     icon: 'Award',
-    accentColor: '#d97706',
+    accentColor: CARD_ACCENT_CYCLE[1],
     order: 11,
   });
   [
@@ -764,7 +607,7 @@ export function buildDefaultSectionsForYear(
       kind: 'subsection',
       names: c.n,
       icon: 'Medal',
-      accentColor: '#d97706',
+      accentColor: CARD_ACCENT_CYCLE[1],
       order: idx + 1,
     });
   });
@@ -776,7 +619,7 @@ export function buildDefaultSectionsForYear(
     kind: 'main',
     names: { ar: 'ملفات متنوعة', en: 'Miscellaneous Files', fr: 'Fichiers Divers' },
     icon: 'FolderArchive',
-    accentColor: '#0284c7',
+    accentColor: CARD_ACCENT_CYCLE[2],
     order: 12,
   });
   pushNode({
@@ -816,7 +659,7 @@ export function buildDefaultSectionsForYear(
     featureType: 'seminars',
     names: { ar: 'الندوات', en: 'Seminars', fr: 'Séminaires' },
     icon: 'Presentation',
-    accentColor: '#059669',
+    accentColor: CARD_ACCENT_CYCLE[3],
     order: 13,
   });
   pushNode({
@@ -826,7 +669,7 @@ export function buildDefaultSectionsForYear(
     featureType: 'seminars',
     names: { ar: 'ندوات داخلية', en: 'Internal Seminars', fr: 'Séminaires Internes' },
     icon: 'Users',
-    accentColor: '#059669',
+    accentColor: CARD_ACCENT_CYCLE[3],
     order: 1,
   });
   pushNode({
@@ -836,7 +679,7 @@ export function buildDefaultSectionsForYear(
     featureType: 'seminars',
     names: { ar: 'ندوات خارجية', en: 'External Seminars', fr: 'Séminaires Externes' },
     icon: 'Building2',
-    accentColor: '#059669',
+    accentColor: CARD_ACCENT_CYCLE[3],
     order: 2,
   });
 
@@ -848,7 +691,7 @@ export function buildDefaultSectionsForYear(
     featureType: 'forum_chat',
     names: { ar: 'منتدى النقاش والمحادثة', en: 'Forum & Chat', fr: 'Forum & Messagerie' },
     icon: 'MessageSquare',
-    accentColor: '#e11d48',
+    accentColor: CARD_ACCENT_CYCLE[4],
     order: 14,
   });
 

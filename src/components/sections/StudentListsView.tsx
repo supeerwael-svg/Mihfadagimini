@@ -4,9 +4,12 @@ import {
   ArrowUp,
   Copy,
   Edit2,
+  FileSpreadsheet,
+  LayoutGrid,
   Plus,
-  Table as TableIcon,
+  Table2,
   Trash2,
+  UploadCloud,
   Users,
 } from 'lucide-react';
 import { useI18n } from '@/src/i18n/I18nContext';
@@ -14,20 +17,37 @@ import { services } from '@/src/services';
 import type {
   ClassRoomRecord,
   FileRecord,
+  GradeSubjectKey,
   MiddleSchoolLevel,
+  SubjectRecord,
+  UserRecord,
 } from '@/src/types/models';
 import type { ServiceContext } from '@/src/types/services';
 import { ConfirmDialog } from '@/src/components/common/ConfirmDialog';
 import { EmptyState } from '@/src/components/common/EmptyState';
 import { FileList } from '@/src/components/files/FileList';
-import { FileUploadBar } from '@/src/components/files/FileUploadBar';
+import { ExcelImportWizardModal } from '@/src/components/grades/ExcelImportWizardModal';
+import { GradesTableWorkspace } from '@/src/components/grades/GradesTableWorkspace';
+import { SeatingChartWorkspace } from '@/src/components/seating/SeatingChartWorkspace';
 
 interface StudentListsViewProps {
   ctx: ServiceContext;
+  user: UserRecord;
+  schoolName: string;
+  isArchiveYear: boolean;
   canWrite: boolean;
+  subjects?: SubjectRecord[];
   initialLevel?: MiddleSchoolLevel;
+  initialClassId?: string;
   onOpenFile: (file: FileRecord) => void;
   onClassesSynced: () => Promise<void>;
+  onSubjectsChanged?: () => Promise<void>;
+  onOpenInNotebook: (
+    level: MiddleSchoolLevel,
+    classId: string,
+    term: 1 | 2 | 3 | 'year',
+    subject: GradeSubjectKey
+  ) => void;
 }
 
 const LEVELS: Array<{ code: MiddleSchoolLevel; ar: string; en: string; fr: string }> = [
@@ -39,90 +59,121 @@ const LEVELS: Array<{ code: MiddleSchoolLevel; ar: string; en: string; fr: strin
 
 export const StudentListsView: React.FC<StudentListsViewProps> = ({
   ctx,
+  user,
+  schoolName,
+  isArchiveYear,
   canWrite,
+  subjects: propSubjects,
   initialLevel = '1M',
+  initialClassId,
   onOpenFile,
   onClassesSynced,
+  onSubjectsChanged,
+  onOpenInNotebook,
 }) => {
   const { t, lang } = useI18n();
   const [activeLevel, setActiveLevel] = useState<MiddleSchoolLevel>(initialLevel);
+  const [allYearClasses, setAllYearClasses] = useState<ClassRoomRecord[]>([]);
   const [classes, setClasses] = useState<ClassRoomRecord[]>([]);
+  const [localSubjects, setLocalSubjects] = useState<SubjectRecord[]>(propSubjects ?? []);
   const [selectedClass, setSelectedClass] = useState<ClassRoomRecord | null>(null);
-  const [activeTerm, setActiveTerm] = useState<1 | 2 | 3>(1);
+  const [termTab, setTermTab] = useState<1 | 2 | 3 | 'year'>(1);
+  const [subjectKey, setSubjectKey] = useState<GradeSubjectKey>('');
+  const [classViewTab, setClassViewTab] = useState<'grades' | 'seating'>('grades');
+
+  const activeSubjects = propSubjects ?? localSubjects;
+
   const [termFiles, setTermFiles] = useState<FileRecord[]>([]);
   const [classStats, setClassStats] = useState<
-    Record<string, { count: number; lastUpdated: string | null }>
+    Record<string, { fileCount: number; studentCount: number; lastUpdated: string | null }>
   >({});
-  const [termStats, setTermStats] = useState<
-    Record<1 | 2 | 3, { count: number; lastUpdated: string | null }>
-  >({
-    1: { count: 0, lastUpdated: null },
-    2: { count: 0, lastUpdated: null },
-    3: { count: 0, lastUpdated: null },
-  });
 
   const [newClassName, setNewClassName] = useState('');
   const [renameTarget, setRenameTarget] = useState<ClassRoomRecord | null>(null);
   const [renameVal, setRenameVal] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<ClassRoomRecord | null>(null);
   const [copyToast, setCopyToast] = useState('');
+  const [wizardFile, setWizardFile] = useState<{ blob: Blob; name: string } | null>(null);
+  const [workspaceRefreshKey, setWorkspaceRefreshKey] = useState(0);
 
-  const loadLevelClasses = async (lvl: MiddleSchoolLevel) => {
-    const list = await services.classes.listByYear(ctx.academicYearId, lvl);
+  const activeTermNum: 1 | 2 | 3 = termTab === 'year' ? 1 : termTab;
+
+  const loadLevelClasses = async (lvl: MiddleSchoolLevel, preferClassId?: string) => {
+    const [allCls, list, subList] = await Promise.all([
+      services.classes.listByYear(ctx.academicYearId),
+      services.classes.listByYear(ctx.academicYearId, lvl),
+      services.subjects.listForTeacher(ctx.academicYearId, ctx.ownerId, false),
+    ]);
+    setAllYearClasses(allCls);
     setClasses(list);
+    setLocalSubjects(subList);
+    if (!subList.some((s) => s.id === subjectKey)) {
+      setSubjectKey(subList[0]?.id || '');
+    }
 
-    const stats: Record<string, { count: number; lastUpdated: string | null }> = {};
+    const stats: Record<
+      string,
+      { fileCount: number; studentCount: number; lastUpdated: string | null }
+    > = {};
     for (const c of list) {
-      const s = await services.files.getFolderStats(
-        ctx.academicYearId,
-        Object.values(c.termSectionIds)
-      );
-      stats[c.id] = { count: s.count, lastUpdated: s.lastUpdated };
+      const [s, sts] = await Promise.all([
+        services.files.getFolderStats(ctx.academicYearId, Object.values(c.termSectionIds)),
+        services.students.listByClass(ctx.academicYearId, c.id),
+      ]);
+      stats[c.id] = {
+        fileCount: s.count,
+        studentCount: sts.length,
+        lastUpdated: s.lastUpdated,
+      };
     }
     setClassStats(stats);
 
-    if (selectedClass && !list.some((c) => c.id === selectedClass.id)) {
+    if (preferClassId) {
+      const found = list.find((c) => c.id === preferClassId);
+      if (found) {
+        setSelectedClass(found);
+        return;
+      }
+    }
+    if (selectedClass && list.some((c) => c.id === selectedClass.id)) {
+      setSelectedClass(list.find((c) => c.id === selectedClass.id) ?? null);
+    } else {
       setSelectedClass(list[0] ?? null);
-    } else if (!selectedClass && list.length > 0) {
-      setSelectedClass(list[0]);
     }
   };
 
-  const loadSelectedClassTerms = async (cls: ClassRoomRecord | null, term: 1 | 2 | 3) => {
+  const loadSelectedTermFiles = async (cls: ClassRoomRecord | null, term: 1 | 2 | 3) => {
     if (!cls) {
       setTermFiles([]);
       return;
     }
-    const [s1, s2, s3, files] = await Promise.all([
-      services.files.getFolderStats(ctx.academicYearId, [cls.termSectionIds[1]]),
-      services.files.getFolderStats(ctx.academicYearId, [cls.termSectionIds[2]]),
-      services.files.getFolderStats(ctx.academicYearId, [cls.termSectionIds[3]]),
-      services.files.listBySection(ctx.academicYearId, cls.termSectionIds[term]),
-    ]);
-    setTermStats({
-      1: { count: s1.count, lastUpdated: s1.lastUpdated },
-      2: { count: s2.count, lastUpdated: s2.lastUpdated },
-      3: { count: s3.count, lastUpdated: s3.lastUpdated },
-    });
+    const files = await services.files.listBySection(ctx.academicYearId, cls.termSectionIds[term]);
     setTermFiles(files);
   };
 
   useEffect(() => {
-    setSelectedClass(null);
-    loadLevelClasses(activeLevel);
-  }, [activeLevel, ctx.academicYearId]);
+    loadLevelClasses(activeLevel, initialClassId);
+  }, [activeLevel, ctx.academicYearId, ctx.ownerId, initialClassId]);
 
   useEffect(() => {
-    loadSelectedClassTerms(selectedClass, activeTerm);
-  }, [selectedClass, activeTerm, ctx.academicYearId]);
+    if (propSubjects) {
+      setLocalSubjects(propSubjects);
+      if (!propSubjects.some((s) => s.id === subjectKey)) {
+        setSubjectKey(propSubjects[0]?.id || '');
+      }
+    }
+  }, [propSubjects]);
+
+  useEffect(() => {
+    loadSelectedTermFiles(selectedClass, activeTermNum);
+  }, [selectedClass, activeTermNum, ctx.academicYearId]);
 
   const handleAddClass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassName.trim()) return;
     const created = await services.classes.addClass(ctx, activeLevel, newClassName);
     setNewClassName('');
-    await loadLevelClasses(activeLevel);
-    setSelectedClass(created);
+    await loadLevelClasses(activeLevel, created.id);
     await onClassesSynced();
   };
 
@@ -138,13 +189,26 @@ export const StudentListsView: React.FC<StudentListsViewProps> = ({
   };
 
   const handleCopyToNextTerm = async () => {
-    if (!selectedClass || activeTerm === 3) return;
-    const nextTerm = (activeTerm + 1) as 2 | 3;
-    const copied = await services.classes.copyTermFiles(ctx, selectedClass, activeTerm, nextTerm);
+    if (!selectedClass || activeTermNum === 3) return;
+    const nextTerm = (activeTermNum + 1) as 2 | 3;
+    const copied = await services.classes.copyTermFiles(ctx, selectedClass, activeTermNum, nextTerm);
     setCopyToast(`${t.sections.copiedCount} (${copied})`);
     window.setTimeout(() => setCopyToast(''), 2500);
-    setActiveTerm(nextTerm);
+    setTermTab(nextTerm);
     await loadLevelClasses(activeLevel);
+  };
+
+  const handleExcelUploadWithWizard = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedClass) return;
+    await services.files.uploadFiles(ctx, selectedClass.termSectionIds[activeTermNum], [file], {
+      termNumber: activeTermNum,
+      compressImages: false,
+    });
+    e.target.value = '';
+    await loadLevelClasses(activeLevel);
+    await loadSelectedTermFiles(selectedClass, activeTermNum);
+    setWizardFile({ blob: file, name: file.name });
   };
 
   return (
@@ -154,7 +218,10 @@ export const StudentListsView: React.FC<StudentListsViewProps> = ({
           <button
             key={lvl.code}
             type="button"
-            onClick={() => setActiveLevel(lvl.code)}
+            onClick={() => {
+              setSelectedClass(null);
+              setActiveLevel(lvl.code);
+            }}
             className={`min-h-[42px] rounded-xl text-xs font-bold transition-colors ${
               activeLevel === lvl.code
                 ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)]'
@@ -190,7 +257,11 @@ export const StudentListsView: React.FC<StudentListsViewProps> = ({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
           {classes.map((cls, idx) => {
-            const st = classStats[cls.id] || { count: 0, lastUpdated: null };
+            const st = classStats[cls.id] || {
+              fileCount: 0,
+              studentCount: 0,
+              lastUpdated: null,
+            };
             const isSelected = selectedClass?.id === cls.id;
             return (
               <div
@@ -215,8 +286,7 @@ export const StudentListsView: React.FC<StudentListsViewProps> = ({
                         {cls.name}
                       </div>
                       <div className="text-[11px] text-[var(--color-text-muted)] tabular-nums">
-                        {st.count} {t.common.filesCount}
-                        {st.lastUpdated ? ` · ${st.lastUpdated.slice(0, 10)}` : ''}
+                        {st.studentCount} {t.grades.studentsCount} · {st.fileCount} {t.common.filesCount}
                       </div>
                     </div>
                   </button>
@@ -266,75 +336,152 @@ export const StudentListsView: React.FC<StudentListsViewProps> = ({
       )}
 
       {selectedClass && (
-        <div className="rounded-3xl bg-[var(--color-surface)] border border-[var(--color-border)] p-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <TableIcon className="w-5 h-5 text-[var(--color-primary)]" />
-              <h3 className="text-sm font-extrabold">{selectedClass.name}</h3>
-            </div>
-            {canWrite && activeTerm < 3 && termFiles.length > 0 && (
+        <div className="space-y-4">
+          {services.seating.canAccessSeating(user, selectedClass) && (
+            <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)]">
               <button
                 type="button"
-                onClick={handleCopyToNextTerm}
-                className="min-h-[38px] px-3 rounded-xl bg-[var(--color-primary-light)] text-[var(--color-primary)] text-xs font-bold inline-flex items-center gap-1.5"
+                onClick={() => setClassViewTab('grades')}
+                className={`min-h-[44px] rounded-xl text-xs font-extrabold inline-flex items-center justify-center gap-1.5 transition-colors ${
+                  classViewTab === 'grades'
+                    ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)]'
+                    : 'text-[var(--color-text-muted)]'
+                }`}
               >
-                <Copy className="w-3.5 h-3.5" />
-                <span>{t.sections.copyToNextTerm}</span>
+                <Table2 className="w-4 h-4" />
+                <span>{t.seating.gradesAndListTab}</span>
               </button>
-            )}
-          </div>
-
-          {copyToast && (
-            <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 px-3 py-2 text-xs font-bold">
-              {copyToast}
+              <button
+                type="button"
+                onClick={() => setClassViewTab('seating')}
+                className={`min-h-[44px] rounded-xl text-xs font-extrabold inline-flex items-center justify-center gap-1.5 transition-colors ${
+                  classViewTab === 'seating'
+                    ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)]'
+                    : 'text-[var(--color-text-muted)]'
+                }`}
+              >
+                <LayoutGrid className="w-4 h-4" />
+                <span>{t.seating.seatingChartTab}</span>
+              </button>
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-[var(--color-background)]">
-            {([1, 2, 3] as const).map((term) => {
-              const label =
-                term === 1 ? t.sections.term1 : term === 2 ? t.sections.term2 : t.sections.term3;
-              return (
-                <button
-                  key={term}
-                  type="button"
-                  onClick={() => setActiveTerm(term)}
-                  className={`min-h-[44px] px-2 rounded-xl text-xs font-bold transition-colors ${
-                    activeTerm === term
-                      ? 'bg-[var(--color-surface)] text-[var(--color-primary)] shadow-sm'
-                      : 'text-[var(--color-text-muted)]'
-                  }`}
-                >
-                  <div>{label}</div>
-                  <div className="text-[10px] opacity-75 tabular-nums">
-                    {termStats[term].count} {t.common.filesCount}
-                  </div>
-                </button>
-              );
-            })}
+          {classViewTab === 'seating' && services.seating.canAccessSeating(user, selectedClass) ? (
+            <SeatingChartWorkspace
+              key={`seating-${selectedClass.id}-${workspaceRefreshKey}`}
+              ctx={ctx}
+              user={user}
+              schoolName={schoolName}
+              classRoom={selectedClass}
+              subjects={activeSubjects}
+              termNumber={activeTermNum}
+              subjectKey={subjectKey || activeSubjects[0]?.id || ''}
+              isArchiveYear={isArchiveYear}
+              onChangeTerm={(tm) => setTermTab(tm)}
+              onChangeSubject={setSubjectKey}
+              onChanged={() => loadLevelClasses(activeLevel)}
+            />
+          ) : (
+            /* Shared Single-Source-of-Truth Grades Table */
+            <GradesTableWorkspace
+              key={`${selectedClass.id}-${workspaceRefreshKey}`}
+              ctx={ctx}
+              user={user}
+              schoolName={schoolName}
+              classRoom={selectedClass}
+              allClasses={allYearClasses}
+              subjects={activeSubjects}
+              isArchiveYear={isArchiveYear}
+              termTab={termTab}
+              onChangeTermTab={setTermTab}
+              subjectKey={subjectKey}
+              onChangeSubject={setSubjectKey}
+              crossLinkButton={{
+                label: t.grades.openInNotebook,
+                onClick: () =>
+                  onOpenInNotebook(
+                    selectedClass.levelCode,
+                    selectedClass.id,
+                    termTab,
+                    subjectKey || activeSubjects[0]?.id || ''
+                  ),
+              }}
+              onDataChanged={() => loadLevelClasses(activeLevel)}
+              onSubjectsChanged={async () => {
+                await loadLevelClasses(activeLevel);
+                if (onSubjectsChanged) await onSubjectsChanged();
+              }}
+            />
+          )}
+
+          {/* Original Uploaded Excel Files (Attached for Reference + Wizard Re-Run) */}
+          <div className="rounded-3xl bg-[var(--color-surface)] border border-[var(--color-border)] p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-[var(--color-primary)]" />
+                <h4 className="text-xs font-extrabold">{t.grades.attachedReferenceFiles}</h4>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {canWrite && activeTermNum < 3 && termFiles.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleCopyToNextTerm}
+                    className="min-h-[38px] px-3 rounded-xl bg-[var(--color-primary-light)] text-[var(--color-primary)] text-xs font-bold inline-flex items-center gap-1.5"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{t.sections.copyToNextTerm}</span>
+                  </button>
+                )}
+
+                {canWrite && (
+                  <label className="min-h-[40px] px-3.5 rounded-xl bg-[var(--color-primary)] text-[var(--color-on-primary)] text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer">
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Excel / CSV + Wizard</span>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      onChange={handleExcelUploadWithWizard}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {copyToast && (
+              <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 px-3 py-2 text-xs font-bold">
+                {copyToast}
+              </div>
+            )}
+
+            <FileList
+              files={termFiles}
+              canWrite={canWrite}
+              onOpenFile={onOpenFile}
+              onChanged={() => {
+                loadLevelClasses(activeLevel);
+                loadSelectedTermFiles(selectedClass, activeTermNum);
+              }}
+            />
+
+            {canWrite && termFiles.some((f) => f.blob) && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {termFiles
+                  .filter((f) => f.blob)
+                  .map((f) => (
+                    <button
+                      key={`wiz-${f.id}`}
+                      type="button"
+                      onClick={() => f.blob && setWizardFile({ blob: f.blob, name: f.name })}
+                      className="min-h-[34px] px-3 rounded-xl border border-[var(--color-border)] text-[11px] font-bold text-[var(--color-primary)]"
+                    >
+                      {t.grades.importWizardTitle}: {f.name}
+                    </button>
+                  ))}
+              </div>
+            )}
           </div>
-
-          <FileUploadBar
-            ctx={ctx}
-            sectionId={selectedClass.termSectionIds[activeTerm]}
-            accept=".xlsx,.xls,.csv"
-            termNumber={activeTerm}
-            disabled={!canWrite}
-            onUploaded={() => {
-              loadLevelClasses(activeLevel);
-              loadSelectedClassTerms(selectedClass, activeTerm);
-            }}
-          />
-
-          <FileList
-            files={termFiles}
-            canWrite={canWrite}
-            onOpenFile={onOpenFile}
-            onChanged={() => {
-              loadLevelClasses(activeLevel);
-              loadSelectedClassTerms(selectedClass, activeTerm);
-            }}
-          />
         </div>
       )}
 
@@ -392,6 +539,26 @@ export const StudentListsView: React.FC<StudentListsViewProps> = ({
         }}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {wizardFile && selectedClass && (
+        <ExcelImportWizardModal
+          open={Boolean(wizardFile)}
+          blob={wizardFile.blob}
+          fileName={wizardFile.name}
+          ctx={ctx}
+          user={user}
+          classRoom={selectedClass}
+          termNumber={activeTermNum}
+          subjectKey={subjectKey || activeSubjects[0]?.id || ''}
+          maxGrade={20}
+          initialMode="create_or_update"
+          onClose={() => setWizardFile(null)}
+          onImported={async () => {
+            setWorkspaceRefreshKey((k) => k + 1);
+            await loadLevelClasses(activeLevel);
+          }}
+        />
+      )}
     </div>
   );
 };
